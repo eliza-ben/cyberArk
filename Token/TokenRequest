@@ -1,0 +1,10 @@
+public class TokenRequest {
+    private List<String> requestedSecretKeys;
+
+    public TokenRequest(List<String> requestedSecretKeys) {
+        this.requestedSecretKeys = requestedSecretKeys;
+    }
+
+    public List<String> getRequestedSecretKeys() { return requestedSecretKeys; }
+    public void setRequestedSecretKeys(List<String> keys) { this.requestedSecretKeys = keys; }
+}
