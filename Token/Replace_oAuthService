@@ -28,3 +28,17 @@ return tokenService.getToken(correlationId)             // ← replaced
                     tokenFetchMs.get(), bytesSent.get(), bytesReceived.get()))
         )
         .onErrorResume(ex -> handleError(requestId, correlationId, startTime, ex));
+
+
+
+@Component
+public class ApiActionRunner {
+
+    private final TokenService tokenService; // ← replaces OAuthTokenService
+
+    public ApiActionRunner(TokenService tokenService) {
+        this.tokenService = tokenService;
+    }
+
+    // ... rest of your runner
+}
