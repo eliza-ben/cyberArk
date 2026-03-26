@@ -1,0 +1,318 @@
+"""Secrets client for centralized secrets retrieval."""
+
+import os
+from typing import Optional
+import httpx
+from fastapi import HTTPException
+
+# CYBERARK-INTEGRATION: Import required libraries for credential resolver
+import os
+from enum import Enum
+from typing import Dict, List, Optional
+from urllib.parse import urlparse, urlunparse,quote
+import certifi
+from pathlib import Path
+
+from common.logging import get_correlation_id
+
+CYBERARK_CERT_PATH = os.getenv("CYBERARK_CERT_PATH")
+
+if CYBERARK_CERT_PATH:
+    CYBERARK_CERT_PATH = str(Path(CYBERARK_CERT_PATH).resolve())
+# Fix Snyk SAST scan vulnerability
+CREDENTIAL_SERVICE_VERIFY_SSL = os.getenv("CREDENTIAL_SERVICE_VERIFY_SSL", "false").lower() == "true"
+
+_kafka_secret_cache: Optional[str] = None
+
+
+class SecretsClient:
+    """Client for retrieving secrets from Security Gateway."""
+    
+    def __init__(self, base_url: str | None = None, timeout: int = 10):
+        """
+        Initialize secrets client.
+        
+        Args:
+            base_url: Base URL of security gateway (defaults to SECURITY_BASE_URL env var)
+            timeout: Request timeout in seconds
+        """
+        self.base_url = base_url or os.getenv(
+            "SECURITY_BASE_URL",
+            "http://security-gateway:8088"
+        )
+        self.timeout = timeout
+    
+    async def get_secret(self, name: str, version: Optional[str] = None) -> str:
+        """
+        Retrieve a secret from the security gateway.
+        
+        Args:
+            name: Secret name
+            version: Optional secret version
+            
+        Returns:
+            Secret value as string
+            
+        Raises:
+            HTTPException: 502 if gateway fails, 404 if secret not found
+        """
+        url = f"{self.base_url}/v1/secrets/{name}"
+        params = {}
+        if version:
+            params["version"] = version
+        
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(url, params=params)
+                
+                if response.status_code == 404:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"Secret '{name}' not found",
+                    )
+                
+                if response.status_code != 200:
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"Security gateway error ({response.status_code}): {response.text}",
+                    )
+                
+                data = response.json()
+                return data.get("value", "")
+        
+        except httpx.TimeoutException:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Security gateway timeout after {self.timeout}s",
+            )
+        except httpx.RequestError as e:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Security gateway connection error: {str(e)}",
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to retrieve secret: {str(e)}",
+            )
+
+
+# TREAS-3024: Replace static Kafka and DB credentials with CyberArk runtime resolution
+"""
+common/creds.py
+
+Shared credential utilities used across services.
+This supports resolving {password} placeholder in DB URL based on DB username.
+"""
+
+
+# CYBERARK-INTEGRATION: supported sources for credential resolution
+class CredentialSource(str, Enum):
+    ESO = "eso"
+    CYBERARK = "cyberark"
+
+
+# CYBERARK-INTEGRATION: DB URL placeholder supported in payload
+PASSWORD_PLACEHOLDER = "{password}"
+
+
+def extract_db_username(sqlalchemy_url: str) -> Optional[str]:
+    """
+    CYBERARK-INTEGRATION: Extract DB username from SQLAlchemy URL.
+
+    Example:
+        postgresql://svc_tms_admin:{password}@host:5432/db
+        -> svc_tms_admin
+    """
+    if not sqlalchemy_url:
+        return None
+
+    parsed = urlparse(sqlalchemy_url)
+    if not parsed.username:
+        return None
+
+    return parsed.username
+
+
+def build_secret_key_from_username(username: str) -> str:
+    """
+    CYBERARK-INTEGRATION: Convert username into credential-service key.
+
+    IMPORTANT:
+    This is org-specific.
+
+    If your Java service expects keys like:
+      dv_gen_<username>-svc
+
+    then build it here.
+
+    For now, simplest: use username directly.
+    You can change this mapping later without touching service code.
+    """
+    return username
+
+
+async def fetch_secrets_from_credential_service(
+        *,
+        credential_service_url: str,
+        requested_secret_keys: List[str],
+        credential_source: str,
+        correlation_id: Optional[str] = None,
+        timeout_seconds: int = 20,
+) -> Dict[str, str]:
+    """
+    CYBERARK-INTEGRATION: Fetch secrets from Java credential service.
+
+    ESO:
+      POST {base}/api/secrets
+      body: {"requestedSecretKeys": ["key1","key2"]}
+
+    CyberArk:
+      POST {base}/api/cyberark
+      body: {"requestedSecretKeys": ["key1","key2"]}
+
+    Response:
+      {"key1":"value1","key2":"value2"}
+    """
+    if not credential_service_url:
+        raise ValueError("CREDENTIAL_SERVICE_URL is missing / empty")
+
+    if not requested_secret_keys:
+        return {}
+
+    base = credential_service_url.rstrip("/")
+
+    url = base
+
+    payload = {"requestedSecretKeys": requested_secret_keys}
+
+    headers = {}
+    if correlation_id:
+        headers["X-Correlation-ID"] = correlation_id
+
+    async with httpx.AsyncClient(timeout=timeout_seconds, verify=CREDENTIAL_SERVICE_VERIFY_SSL) as client:
+        resp = await client.post(url, json=payload, headers=headers)
+
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"Credential Service call failed ({resp.status_code}): {resp.text}"
+        )
+
+    data = resp.json()
+    if not isinstance(data, dict):
+        raise RuntimeError("Credential Service returned unexpected response format")
+
+    return {k: str(v) for k, v in data.items()}
+
+
+def inject_password_into_url(sqlalchemy_url: str, password: str) -> str:
+    """
+    CYBERARK-INTEGRATION: Replace {password} placeholder inside DB URL.
+    """
+    if not sqlalchemy_url:
+        return sqlalchemy_url
+
+
+    # Replace only the placeholder
+    return sqlalchemy_url.replace(PASSWORD_PLACEHOLDER, password)
+
+
+async def resolve_password_in_db_url(
+        *,
+        sqlalchemy_url: str,
+        credential_service_url: str,
+        credential_source: str,
+        correlation_id: Optional[str] = None,
+) -> str:
+    """
+    CYBERARK-INTEGRATION: Resolve DB URL password placeholder {password}
+    by fetching password for username in URL.
+
+    Example:
+      postgresql://svc_tms_admin:{password}@host/db
+
+    Steps:
+      1) extract username -> svc_tms_admin
+      2) build secret key (mapping) -> svc_tms_admin
+      3) fetch password
+      4) replace {password}
+    """
+
+    if not sqlalchemy_url:
+        return sqlalchemy_url
+
+    if PASSWORD_PLACEHOLDER not in sqlalchemy_url:
+        # No placeholder => locating the password in connection string and encoding it
+        parsed = urlparse(sqlalchemy_url)
+        encoded_password = quote(parsed.password,safe="")
+        netloc=f"{parsed.username}:{encoded_password}@{parsed.hostname}"
+
+        if parsed.port:
+            netloc+=f":{parsed.port}"
+
+        sqlalchemy_url = urlunparse((
+            parsed.scheme,
+            netloc,
+            parsed.path,
+            parsed.params,
+            parsed.query,
+            parsed.fragment
+        ))
+        return sqlalchemy_url
+
+    username = extract_db_username(sqlalchemy_url)
+
+    if not username:
+        raise ValueError("DB URL contains {password} but username could not be extracted")
+
+    # Build secret request key from username
+    secret_key = build_secret_key_from_username(username)
+
+
+
+    secrets = await fetch_secrets_from_credential_service(
+        credential_service_url=credential_service_url,
+        requested_secret_keys=[secret_key],
+        credential_source=credential_source,
+        correlation_id=correlation_id,
+    )
+
+    if secret_key not in secrets or not secrets[secret_key]:
+        raise RuntimeError(f"No secret returned for DB user: {username}")
+
+    password = quote(secrets[secret_key], safe="")
+
+    resolved_url = inject_password_into_url(sqlalchemy_url, password)
+    return resolved_url
+
+
+async def get_kafka_sasl_password(correlation_id: Optional[str] = None) -> str:
+    global _kafka_secret_cache
+
+    if _kafka_secret_cache:
+        return _kafka_secret_cache
+
+    credential_service_url = os.getenv("CREDENTIAL_SERVICE_URL")
+    credential_source = os.getenv("CREDENTIAL_SOURCE", "ESO")
+    secret_key = os.getenv("KAFKA_SASL_USERNAME")
+
+    if not credential_service_url:
+        raise RuntimeError("CREDENTIAL_SERVICE_URL is missing")
+
+    if not secret_key:
+        raise RuntimeError("KAFKA_SASL_USERNAME is missing")
+
+    secrets = await fetch_secrets_from_credential_service(
+        credential_service_url=credential_service_url,
+        requested_secret_keys=[secret_key],
+        credential_source=credential_source,
+        correlation_id=correlation_id,
+    )
+
+    if secret_key not in secrets:
+        raise RuntimeError("Kafka SASL password not returned from credential service")
+
+    _kafka_secret_cache = secrets[secret_key]
+    return _kafka_secret_cache
