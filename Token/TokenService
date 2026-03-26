@@ -1,0 +1,90 @@
+import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.http.MediaType;
+
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+@Service
+public class TokenService {
+
+    private final WebClient webClient;
+    private final Map<String, String> tokenCache = new ConcurrentHashMap<>();
+
+    private final String credentialServiceUrl = System.getenv("CREDENTIAL_SERVICE_URL");
+    private final String tokenSecretKey       = System.getenv("API_TOKEN_SECRET_KEY");
+    private final boolean verifySSL =
+        "true".equalsIgnoreCase(System.getenv("CREDENTIAL_SERVICE_VERIFY_SSL"));
+
+    public TokenService(WebClient.Builder webClientBuilder) {
+        this.webClient = webClientBuilder.build();
+    }
+
+    /**
+     * Get token — returns cached value if available.
+     */
+    public String getToken(String correlationId) {
+        if (tokenCache.containsKey(tokenSecretKey)) {
+            return tokenCache.get(tokenSecretKey);
+        }
+        return fetchAndCacheToken(correlationId);
+    }
+
+    /**
+     * Force refresh — clears cache and fetches a new token.
+     * Call this on 401 responses.
+     */
+    public String refreshToken(String correlationId) {
+        tokenCache.remove(tokenSecretKey);
+        return fetchAndCacheToken(correlationId);
+    }
+
+    /**
+     * Clear all cached tokens.
+     */
+    public void clearCache() {
+        tokenCache.clear();
+    }
+
+    // ─── Private ─────────────────────────────────────────────────────────────
+
+    private String fetchAndCacheToken(String correlationId) {
+        validate();
+
+        TokenRequest payload = new TokenRequest(List.of(tokenSecretKey));
+
+        Map<String, String> response = webClient
+                .post()
+                .uri(credentialServiceUrl)
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("X-Correlation-ID", correlationId != null ? correlationId : "")
+                .bodyValue(payload)
+                .retrieve()
+                .onStatus(
+                    status -> !status.is2xxSuccessful(),
+                    res -> res.bodyToMono(String.class).map(body ->
+                        new RuntimeException("Credential Service failed: " + body)
+                    )
+                )
+                .bodyToMono(Map.class)
+                .block();
+
+        if (response == null || !response.containsKey(tokenSecretKey)) {
+            throw new RuntimeException("No token returned for key: " + tokenSecretKey);
+        }
+
+        String token = String.valueOf(response.get(tokenSecretKey));
+        tokenCache.put(tokenSecretKey, token);
+        return token;
+    }
+
+    private void validate() {
+        if (credentialServiceUrl == null || credentialServiceUrl.isBlank()) {
+            throw new RuntimeException("CREDENTIAL_SERVICE_URL is missing");
+        }
+        if (tokenSecretKey == null || tokenSecretKey.isBlank()) {
+            throw new RuntimeException("API_TOKEN_SECRET_KEY is missing");
+        }
+    }
+}
