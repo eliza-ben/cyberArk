@@ -1,0 +1,4 @@
+CREDENTIAL_SERVICE_URL=https://your-credential-service/api/cyberark
+API_TOKEN_SECRET_KEY=my-api-token-key
+CREDENTIAL_SERVICE_VERIFY_SSL=false
+```
