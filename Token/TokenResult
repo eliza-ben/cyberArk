@@ -1,0 +1,11 @@
+// TokenResult.java — mirrors oAuthTokenService.getToken() return type
+public record TokenResult(
+    String accessToken,
+    TokenCallInfo tokenCallInfo
+) {}
+
+// TokenCallInfo.java — mirrors tokenResult.tokenCallInfo() usage in your code
+public record TokenCallInfo(
+    boolean isUsed,
+    boolean isCached
+) {}
