@@ -1,0 +1,30 @@
+// BEFORE
+return oAuthTokenService.getToken(request.getAuthConfig(), timeout)
+        .doOnNext(tokenResult -> {
+            if (tokenResult.tokenCallInfo().isUsed() && !tokenResult.tokenCallInfo().isCached()) {
+                tokenFetchMs.set(System.currentTimeMillis() - startTime);
+            }
+        })
+        .flatMap(tokenResult ->
+            executeTargetCall(request, tokenResult.accessToken(), correlationId, timeout, bytesSent, bytesReceived)
+                .map(rawResponse -> buildResponse(requestId, correlationId, startTime,
+                    tokenResult.tokenCallInfo(), rawResponse, request,
+                    tokenFetchMs.get(), bytesSent.get(), bytesReceived.get()))
+        )
+        .onErrorResume(ex -> handleError(requestId, correlationId, startTime, ex));
+
+
+// AFTER — only the first line changes
+return tokenService.getToken(correlationId)             // ← replaced
+        .doOnNext(tokenResult -> {
+            if (tokenResult.tokenCallInfo().isUsed() && !tokenResult.tokenCallInfo().isCached()) {
+                tokenFetchMs.set(System.currentTimeMillis() - startTime);
+            }
+        })
+        .flatMap(tokenResult ->
+            executeTargetCall(request, tokenResult.accessToken(), correlationId, timeout, bytesSent, bytesReceived)
+                .map(rawResponse -> buildResponse(requestId, correlationId, startTime,
+                    tokenResult.tokenCallInfo(), rawResponse, request,
+                    tokenFetchMs.get(), bytesSent.get(), bytesReceived.get()))
+        )
+        .onErrorResume(ex -> handleError(requestId, correlationId, startTime, ex));
