@@ -1,0 +1,29 @@
+@Component
+public class MyApiClient {
+
+    private final TokenService tokenService;
+    private final WebClient webClient;
+
+    public MyApiClient(TokenService tokenService, WebClient.Builder builder) {
+        this.tokenService = tokenService;
+        this.webClient = builder.baseUrl("https://external-service.com").build();
+    }
+
+    public String callApi(String correlationId) {
+        String token = tokenService.getToken(correlationId);
+
+        return webClient.get()
+                .uri("/api/resource")
+                .header("Authorization", "Bearer " + token)
+                .retrieve()
+                .onStatus(
+                    status -> status.value() == 401,
+                    res -> {
+                        tokenService.refreshToken(correlationId); // auto-refresh on 401
+                        return res.createException();
+                    }
+                )
+                .bodyToMono(String.class)
+                .block();
+    }
+}
