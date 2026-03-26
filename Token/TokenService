@@ -79,6 +79,114 @@ public class TokenService {
         return token;
     }
 
+
+
+
+
+
+    private void validate() {
+        if (credentialServiceUrl == null || credentialServiceUrl.isBlank()) {
+            throw new RuntimeException("CREDENTIAL_SERVICE_URL is missing");
+        }
+        if (tokenSecretKey == null || tokenSecretKey.isBlank()) {
+            throw new RuntimeException("API_TOKEN_SECRET_KEY is missing");
+        }
+    }
+}
+
+
+
+
+
+
+
+
+import reactor.core.publisher.Mono;
+import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.http.MediaType;
+
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+@Service
+public class TokenService {
+
+    private final WebClient webClient;
+    private final Map<String, String> tokenCache = new ConcurrentHashMap<>();
+
+    private final String credentialServiceUrl = System.getenv("CREDENTIAL_SERVICE_URL");
+    private final String tokenSecretKey       = System.getenv("API_TOKEN_SECRET_KEY");
+
+    public TokenService(WebClient.Builder webClientBuilder) {
+        this.webClient = webClientBuilder.build();
+    }
+
+    /**
+     * Reactive getToken — drop-in replacement for oAuthTokenService.getToken().
+     * Returns Mono<TokenResult> with accessToken + tokenCallInfo metadata.
+     */
+    public Mono<TokenResult> getToken(String correlationId) {
+        boolean isCached = tokenCache.containsKey(tokenSecretKey);
+
+        if (isCached) {
+            String cachedToken = tokenCache.get(tokenSecretKey);
+            return Mono.just(new TokenResult(
+                cachedToken,
+                new TokenCallInfo(true, true) // isUsed=true, isCached=true
+            ));
+        }
+
+        return fetchTokenFromCyberArk(correlationId)
+                .map(token -> {
+                    tokenCache.put(tokenSecretKey, token);
+                    return new TokenResult(
+                        token,
+                        new TokenCallInfo(true, false) // isUsed=true, isCached=false
+                    );
+                });
+    }
+
+    /**
+     * Force-refresh token — call on 401.
+     */
+    public Mono<TokenResult> refreshToken(String correlationId) {
+        tokenCache.remove(tokenSecretKey);
+        return getToken(correlationId);
+    }
+
+    // ─── Private ──────────────────────────────────────────────────────────────
+
+    private Mono<String> fetchTokenFromCyberArk(String correlationId) {
+        validate();
+
+        Map<String, Object> payload = Map.of(
+            "requestedSecretKeys", List.of(tokenSecretKey)
+        );
+
+        return webClient
+                .post()
+                .uri(credentialServiceUrl)
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("X-Correlation-ID", correlationId != null ? correlationId : "")
+                .bodyValue(payload)
+                .retrieve()
+                .onStatus(
+                    status -> !status.is2xxSuccessful(),
+                    res -> res.bodyToMono(String.class).map(body ->
+                        new RuntimeException("Credential Service failed: " + body)
+                    )
+                )
+                .bodyToMono(Map.class)
+                .map(response -> {
+                    if (response == null || !response.containsKey(tokenSecretKey)) {
+                        throw new RuntimeException("No token returned for key: " + tokenSecretKey);
+                    }
+                    return String.valueOf(response.get(tokenSecretKey));
+                });
+    }
+
     private void validate() {
         if (credentialServiceUrl == null || credentialServiceUrl.isBlank()) {
             throw new RuntimeException("CREDENTIAL_SERVICE_URL is missing");
