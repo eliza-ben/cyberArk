@@ -1,0 +1,30 @@
+"auth_config": {
+    "type": "cyberark",
+    "secret_key": "${API_TOKEN_SECRET_KEY}"
+}
+
+
+// AuthConfig.java
+public record AuthConfig(
+    String type,           // "oauth" | "cyberark"
+    String secretKey,      // used when type = cyberark
+    // OAuth fields (nullable when type = cyberark)
+    String tokenUrl,
+    String clientId,
+    String clientSecret,
+    String grantType,
+    String scope
+) {}
+
+
+
+ava// In ApiActionRunner — route by auth type
+public Mono<TokenResult> resolveToken(AuthConfig authConfig, String correlationId) {
+    return switch (authConfig.type()) {
+        case "cyberark" -> tokenService.getToken(correlationId);        // ← CyberArk
+        case "oauth"    -> oAuthTokenService.getToken(authConfig, timeout); // ← legacy
+        default -> Mono.error(new IllegalArgumentException(
+            "Unsupported auth type: " + authConfig.type()
+        ));
+    };
+}
