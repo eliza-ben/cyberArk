@@ -1,0 +1,187 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: SERVICENAME
+  labels:
+    app: SERVICENAME
+    environment: testing
+    app.kubernetes.io/name: SERVICENAME
+    app.kubernetes.io/instance: fcb-openshift
+    app.kubernetes.io/component: SERVICENAME
+    fcbint.net/app-id: APM0001007
+
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: SERVICENAME
+      environment: testing
+      app.kubernetes.io/name: SERVICENAME
+      app.kubernetes.io/instance: fcb-openshift
+      app.kubernetes.io/component: SERVICENAME
+      fcbint.net/app-id: APM0001007
+  template:
+    metadata:
+      annotations:
+        appDeploymentTimeStamp: TIMESTAMP
+      labels:
+        app: SERVICENAME
+        environment: testing
+        app.kubernetes.io/name: SERVICENAME
+        app.kubernetes.io/instance: fcb-openshift
+        app.kubernetes.io/component: SERVICENAME
+        fcbint.net/app-id: APM0001007
+    spec:
+      imagePullSecrets:
+        - name: gitlab-registry-secret
+      containers:
+        - image: IMAGEID
+          name: SERVICENAME
+          imagePullPolicy: Always
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "0.384Gi"
+            limits:
+              cpu: "200m"
+              memory: "0.512Gi"
+          volumeMounts:
+            - name: config-volume
+              mountPath: /configs
+            - name: genesis-smb-volume
+              mountPath: /files
+              subPath: Inbound
+          readinessProbe:
+            httpGet:
+              path: api/health/readiness
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 120
+            timeoutSeconds: 10
+            periodSeconds: 60
+          livenessProbe:
+            httpGet:
+              path: api/health/liveness
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 120
+            timeoutSeconds: 10
+            periodSeconds: 60
+      volumes:
+        - name: config-volume
+          configMap:
+            name: CONFIGMAP
+        - name: genesis-smb-volume
+          persistentVolumeClaim:
+            claimName: SERVICENAME
+      ports:
+        - containerPort: 8080
+          name: SERVICENAME
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: SERVICENAME
+  namespace: gen-nifi-qa
+  annotations:
+    metadata.command-issuer.keyfactor.com/Certificate-Support-Group-Contact: "treasuryitsupport@firstcitizens.com"
+    metadata.command-issuer.keyfactor.com/Environment: "Non-Prod-QA"
+    metadata.command-issuer.keyfactor.com/Description: "Genesis SMB SVC Certificate"
+    metadata.command-issuer.keyfactor.com/Organization: "FCB"
+    metadata.command-issuer.keyfactor.com/Application-ID: "APM0001007"
+    metadata.command-issuer.keyfactor.com/Platform: "OPENSHIFT"
+
+spec:
+  commonName: ROUTEHOSTNAME
+  dnsNames:
+    - ROUTEHOSTNAME
+    - genesis-smb-service.gen-nifi-qa.svc
+    - genesis-smb-service.gen-nifi-qa.svc.cluster.local
+  duration: 2160h
+  renewBefore: 360h
+  issuerRef:
+    group: command-issuer.keyfactor.com
+    kind: ClusterIssuer
+    name: keyfactor
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 4096
+  secretName: SERVICENAME
+  secretTemplate:
+    labels:
+      app.kubernetes.io/name: SERVICENAME
+      app.kubernetes.io/instance: fcb-openshift
+      app.kubernetes.io/component: SERVICENAME
+      fcbint.net/app-id: "APM0001007"
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: SERVICENAME
+  namespace: gen-nifi-qa
+  labels:
+    app: SERVICENAME
+    environment: testing
+    app.kubernetes.io/name: SERVICENAME
+    app.kubernetes.io/instance: fcb-openshift
+    app.kubernetes.io/component: SERVICENAME
+    fcbint.net/app-id: APM0001007
+
+  annotations:
+    meta.helm.sh/release-name: genesis
+    meta.helm.sh/release-namespace: gen-nifi-qa
+    route.openshift.io/termination: edge
+
+spec:
+  ingressClassName: openshift-core-zone
+  rules:
+    - host: ROUTEHOSTNAME
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: SERVICENAME
+                port:
+                  number: 8080
+  tls:
+    - hosts:
+        - ROUTEHOSTNAME
+      secretName: SERVICENAME
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: SERVICENAME
+  labels:
+    app: SERVICENAME
+    environment: testing
+    app.kubernetes.io/name: SERVICENAME
+    app.kubernetes.io/instance: fcb-openshift
+    app.kubernetes.io/component: SERVICENAME
+    fcbint.net/app-id: APM0001007
+spec:
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: SERVICENAME
+  selector:
+    app: SERVICENAME
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: SERVICENAME
+  labels:
+    app: SERVICENAME
+    environment: testing
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: ocs-storagecluster-cephfs
