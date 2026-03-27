@@ -46,12 +46,39 @@ spec:
             limits:
               cpu: "200m"
               memory: "0.512Gi"
+
+          # ─── OAuth Environment Variables ────────────────────────────────
+          env:
+            # Sensitive — injected from OCP Secret
+            - name: oauth_client_id
+              valueFrom:
+                secretKeyRef:
+                  name: oauth-secrets
+                  key: oauth_client_id
+
+            - name: oauth_client_secret
+              valueFrom:
+                secretKeyRef:
+                  name: oauth-secrets
+                  key: oauth_client_secret
+
+            # Non-sensitive — inline values (no ConfigMap needed)
+            - name: oauth_token_url
+              value: "https://auth.example.com/oauth/token"
+
+            - name: oauth_scope
+              value: "storage:write"
+
+            - name: oauth_grant_type
+              value: "client_credentials"
+
           volumeMounts:
             - name: config-volume
               mountPath: /configs
             - name: genesis-smb-volume
               mountPath: /files
               subPath: Inbound
+
           readinessProbe:
             httpGet:
               path: api/health/readiness
@@ -60,6 +87,7 @@ spec:
             initialDelaySeconds: 120
             timeoutSeconds: 10
             periodSeconds: 60
+
           livenessProbe:
             httpGet:
               path: api/health/liveness
@@ -68,6 +96,7 @@ spec:
             initialDelaySeconds: 120
             timeoutSeconds: 10
             periodSeconds: 60
+
       volumes:
         - name: config-volume
           configMap:
@@ -75,9 +104,30 @@ spec:
         - name: genesis-smb-volume
           persistentVolumeClaim:
             claimName: SERVICENAME
+
       ports:
         - containerPort: 8080
           name: SERVICENAME
+
+---
+# ─── OCP Secret — sensitive OAuth credentials only ────────────────────────────
+apiVersion: v1
+kind: Secret
+metadata:
+  name: oauth-secrets
+  namespace: gen-nifi-qa
+  labels:
+    app: SERVICENAME
+    environment: testing
+    app.kubernetes.io/name: SERVICENAME
+    app.kubernetes.io/instance: fcb-openshift
+    app.kubernetes.io/component: SERVICENAME
+    fcbint.net/app-id: APM0001007
+type: Opaque
+stringData:
+  oauth_client_id: your-actual-client-id         # replace with real value
+  oauth_client_secret: your-actual-client-secret # replace with real value
+
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
@@ -91,7 +141,6 @@ metadata:
     metadata.command-issuer.keyfactor.com/Organization: "FCB"
     metadata.command-issuer.keyfactor.com/Application-ID: "APM0001007"
     metadata.command-issuer.keyfactor.com/Platform: "OPENSHIFT"
-
 spec:
   commonName: ROUTEHOSTNAME
   dnsNames:
@@ -115,6 +164,7 @@ spec:
       app.kubernetes.io/instance: fcb-openshift
       app.kubernetes.io/component: SERVICENAME
       fcbint.net/app-id: "APM0001007"
+
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -128,12 +178,10 @@ metadata:
     app.kubernetes.io/instance: fcb-openshift
     app.kubernetes.io/component: SERVICENAME
     fcbint.net/app-id: APM0001007
-
   annotations:
     meta.helm.sh/release-name: genesis
     meta.helm.sh/release-namespace: gen-nifi-qa
     route.openshift.io/termination: edge
-
 spec:
   ingressClassName: openshift-core-zone
   rules:
@@ -151,6 +199,7 @@ spec:
     - hosts:
         - ROUTEHOSTNAME
       secretName: SERVICENAME
+
 ---
 apiVersion: v1
 kind: Service
@@ -170,6 +219,7 @@ spec:
       name: SERVICENAME
   selector:
     app: SERVICENAME
+
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
