@@ -1,0 +1,18 @@
+@Slf4j
+@Configuration
+@EnableWebFluxSecurity
+public class SecurityConfig {
+    @Bean
+    public SecurityWebFilterChain securityWebFilterChain (ServerHttpSecurity http) throws Exception {
+        http
+                .csrf(ServerHttpSecurity.CsrfSpec::disable)
+                .authorizeExchange(auth -> auth
+                        .pathMatchers(HttpMethod.POST,"/api/action/execute","/api/workflow/execute").permitAll()
+                        .pathMatchers(HttpMethod.GET,"/api/action/health","/actuator/health").permitAll()
+                        .anyExchange().permitAll()
+                );
+
+        return http.build();
+    }
+}
+}
