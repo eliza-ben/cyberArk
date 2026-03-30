@@ -1,4 +1,4 @@
-WARN  io.netty.channel.ChannelInitializer - Failed to initialize a channel. Closing: [id: 0x4ab04c8a]
+ WARN  io.netty.channel.ChannelInitializer - Failed to initialize a channel. Closing: [id: 0x2dc8c69f]
 java.lang.NoClassDefFoundError: io/netty/util/LeakPresenceDetector
 	at io.netty.handler.codec.http.HttpObjectEncoder.<clinit>(HttpObjectEncoder.java:62)
 	at io.netty.handler.codec.http.HttpClientCodec.<init>(HttpClientCodec.java:241)
@@ -38,7 +38,7 @@ Caused by: java.lang.ClassNotFoundException: io.netty.util.LeakPresenceDetector
 	at java.base/jdk.internal.loader.ClassLoaders$AppClassLoader.loadClass(ClassLoaders.java:188)
 	at java.base/java.lang.ClassLoader.loadClass(ClassLoader.java:525)
 	... 33 common frames omitted
-2026-03-30 10:10:47.822 [reactor-http-nio-2] WARN  io.netty.channel.ChannelInitializer - Failed to initialize a channel. Closing: [id: 0x7ae03e23]
+2026-03-30 13:53:15.861 [reactor-http-nio-2] WARN  io.netty.channel.ChannelInitializer - Failed to initialize a channel. Closing: [id: 0x873d8d2f]
 java.lang.NoClassDefFoundError: Could not initialize class io.netty.handler.codec.http.HttpClientCodec$Encoder
 	at io.netty.handler.codec.http.HttpClientCodec.<init>(HttpClientCodec.java:241)
 	at reactor.netty.http.client.HttpClientConfig.configureHttp11Pipeline(HttpClientConfig.java:827)
@@ -115,7 +115,7 @@ Caused by: java.lang.ExceptionInInitializerError: Exception java.lang.NoClassDef
 	at io.netty.channel.AbstractChannel$AbstractUnsafe.access$200(AbstractChannel.java:428)
 	at io.netty.channel.AbstractChannel$AbstractUnsafe$1.run(AbstractChannel.java:485)
 	... 8 common frames omitted
-2026-03-30 10:10:47.845 [reactor-http-nio-2] WARN  io.netty.channel.ChannelInitializer - Failed to initialize a channel. Closing: [id: 0x001a176b]
+2026-03-30 13:53:15.866 [reactor-http-nio-2] WARN  io.netty.channel.ChannelInitializer - Failed to initialize a channel. Closing: [id: 0x223bce90]
 java.lang.NoClassDefFoundError: Could not initialize class io.netty.handler.codec.http.HttpClientCodec$Encoder
 	at io.netty.handler.codec.http.HttpClientCodec.<init>(HttpClientCodec.java:241)
 	at reactor.netty.http.client.HttpClientConfig.configureHttp11Pipeline(HttpClientConfig.java:827)
@@ -211,7 +211,7 @@ Caused by: java.lang.ExceptionInInitializerError: Exception java.lang.NoClassDef
 	at io.netty.channel.AbstractChannel$AbstractUnsafe.access$200(AbstractChannel.java:428)
 	at io.netty.channel.AbstractChannel$AbstractUnsafe$1.run(AbstractChannel.java:485)
 	... 8 common frames omitted
-2026-03-30 10:10:47.865 [reactor-http-nio-2] WARN  io.netty.channel.ChannelInitializer - Failed to initialize a channel. Closing: [id: 0xc85bc419]
+2026-03-30 13:53:15.872 [reactor-http-nio-2] WARN  io.netty.channel.ChannelInitializer - Failed to initialize a channel. Closing: [id: 0xc30844f3]
 java.lang.NoClassDefFoundError: Could not initialize class io.netty.handler.codec.http.HttpClientCodec$Encoder
 	at io.netty.handler.codec.http.HttpClientCodec.<init>(HttpClientCodec.java:241)
 	at reactor.netty.http.client.HttpClientConfig.configureHttp11Pipeline(HttpClientConfig.java:827)
@@ -290,7 +290,6 @@ java.lang.NoClassDefFoundError: Could not initialize class io.netty.handler.code
 	at reactor.core.publisher.MonoFlatMap$FlatMapMain.secondError(MonoFlatMap.java:241)
 	at reactor.core.publisher.MonoFlatMap$FlatMapInner.onError(MonoFlatMap.java:315)
 	at reactor.core.publisher.FluxOnErrorResume$ResumeSubscriber.onError(FluxOnErrorResume.java:106)
-	at org.springframework.security.config.annotation.web.configuration.SecurityReactorContextConfiguration$SecurityReactorContextSubscriber.onError(SecurityReactorContextConfiguration.java:191)
 	at reactor.core.publisher.SerializedSubscriber.onError(SerializedSubscriber.java:124)
 	at reactor.core.publisher.FluxRetryWhen$RetryWhenMainSubscriber.whenError(FluxRetryWhen.java:229)
 	at reactor.core.publisher.FluxRetryWhen$RetryWhenOtherSubscriber.onError(FluxRetryWhen.java:279)
@@ -350,7 +349,7 @@ Caused by: java.lang.ExceptionInInitializerError: Exception java.lang.NoClassDef
 	at io.netty.channel.AbstractChannel$AbstractUnsafe.access$200(AbstractChannel.java:428)
 	at io.netty.channel.AbstractChannel$AbstractUnsafe$1.run(AbstractChannel.java:485)
 	... 8 common frames omitted
-2026-03-30 10:10:47.875 [reactor-http-nio-2] WARN  io.netty.channel.ChannelInitializer - Failed to initialize a channel. Closing: [id: 0x7a35b448]
+2026-03-30 13:53:15.875 [reactor-http-nio-2] WARN  io.netty.channel.ChannelInitializer - Failed to initialize a channel. Closing: [id: 0x6f3e2f1c]
 java.lang.NoClassDefFoundError: Could not initialize class io.netty.handler.codec.http.HttpClientCodec$Encoder
 	at io.netty.handler.codec.http.HttpClientCodec.<init>(HttpClientCodec.java:241)
 	at reactor.netty.http.client.HttpClientConfig.configureHttp11Pipeline(HttpClientConfig.java:827)
@@ -427,7 +426,7 @@ Caused by: java.lang.ExceptionInInitializerError: Exception java.lang.NoClassDef
 	at io.netty.channel.AbstractChannel$AbstractUnsafe.access$200(AbstractChannel.java:428)
 	at io.netty.channel.AbstractChannel$AbstractUnsafe$1.run(AbstractChannel.java:485)
 	... 8 common frames omitted
-2026-03-30 10:10:47.878 [reactor-http-nio-2] WARN  io.netty.channel.ChannelInitializer - Failed to initialize a channel. Closing: [id: 0xa9d84d60]
+2026-03-30 13:53:15.877 [reactor-http-nio-2] WARN  io.netty.channel.ChannelInitializer - Failed to initialize a channel. Closing: [id: 0xf935f738]
 java.lang.NoClassDefFoundError: Could not initialize class io.netty.handler.codec.http.HttpClientCodec$Encoder
 	at io.netty.handler.codec.http.HttpClientCodec.<init>(HttpClientCodec.java:241)
 	at reactor.netty.http.client.HttpClientConfig.configureHttp11Pipeline(HttpClientConfig.java:827)
@@ -523,3 +522,4 @@ Caused by: java.lang.ExceptionInInitializerError: Exception java.lang.NoClassDef
 	at io.netty.channel.AbstractChannel$AbstractUnsafe.access$200(AbstractChannel.java:428)
 	at io.netty.channel.AbstractChannel$AbstractUnsafe$1.run(AbstractChannel.java:485)
 	... 8 common frames omitted
+2026-03-30 13:53:15.882 [reactor-http-nio-2] ERROR o.f.g.g.a.service.OAuthTokenService - OAuth token fetch failed: null
