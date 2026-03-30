@@ -1,4 +1,4 @@
-[INFO] --- maven-dependency-plugin:3.8.1:tree (default-cli) @ genesis-api-action-runner ---
+ --- maven-dependency-plugin:3.8.1:tree (default-cli) @ genesis-api-action-runner ---
 [INFO] org.fcb.genesis:genesis-api-action-runner:jar:1.0.1
 [INFO] +- org.springframework.boot:spring-boot-starter-webflux:jar:3.5.12:compile
 [INFO] |  +- org.springframework.boot:spring-boot-starter:jar:3.5.12:compile
@@ -15,7 +15,6 @@
 [INFO] |  |  \- com.fasterxml.jackson.module:jackson-module-parameter-names:jar:2.19.4:compile
 [INFO] |  +- org.springframework.boot:spring-boot-starter-reactor-netty:jar:3.5.12:compile
 [INFO] |  |  \- io.projectreactor.netty:reactor-netty-http:jar:1.2.16:compile
-[INFO] |  |     +- io.netty:netty-codec-http2:jar:4.1.131.Final:compile
 [INFO] |  |     +- io.netty:netty-resolver-dns:jar:4.1.131.Final:compile
 [INFO] |  |     |  \- io.netty:netty-codec-dns:jar:4.1.131.Final:compile
 [INFO] |  |     +- io.netty:netty-resolver-dns-native-macos:jar:osx-x86_64:4.1.131.Final:compile
@@ -28,16 +27,16 @@
 [INFO] |  +- org.springframework:spring-web:jar:6.2.17:compile
 [INFO] |  |  \- org.springframework:spring-beans:jar:6.2.17:compile
 [INFO] |  \- org.springframework:spring-webflux:jar:6.2.17:compile
-[INFO] +- io.netty:netty-codec-http:jar:4.2.12.Final:compile
+[INFO] +- io.netty:netty-codec-http2:jar:4.2.12.Final:compile
 [INFO] |  +- io.netty:netty-common:jar:4.1.131.Final:compile
 [INFO] |  +- io.netty:netty-buffer:jar:4.1.131.Final:compile
 [INFO] |  +- io.netty:netty-transport:jar:4.1.131.Final:compile
 [INFO] |  |  \- io.netty:netty-resolver:jar:4.1.131.Final:compile
 [INFO] |  +- io.netty:netty-codec-base:jar:4.2.12.Final:compile
-[INFO] |  +- io.netty:netty-codec-compression:jar:4.2.12.Final:compile
-[INFO] |  \- io.netty:netty-handler:jar:4.1.131.Final:compile
-[INFO] |     +- io.netty:netty-transport-native-unix-common:jar:4.1.131.Final:compile
-[INFO] |     \- io.netty:netty-codec:jar:4.1.131.Final:compile
+[INFO] |  +- io.netty:netty-handler:jar:4.1.131.Final:compile
+[INFO] |  |  +- io.netty:netty-transport-native-unix-common:jar:4.1.131.Final:compile
+[INFO] |  |  \- io.netty:netty-codec:jar:4.1.131.Final:compile
+[INFO] |  \- io.netty:netty-codec-http:jar:4.1.131.Final:compile
 [INFO] +- org.springframework.boot:spring-boot-starter-security:jar:3.5.12:compile
 [INFO] |  +- org.springframework:spring-aop:jar:6.2.17:compile
 [INFO] |  +- org.springframework.security:spring-security-config:jar:6.5.9:compile
