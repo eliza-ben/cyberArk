@@ -1,0 +1,8 @@
+ HttpClient client = HttpClient.newBuilder()
+                .version(Version.HTTP_1_1)
+                .followRedirects(Redirect.NORMAL)
+                .connectTimeout(Duration.ofSeconds(20))                 
+                .build();
+
+
+HTTP/1.1 header parser received no bytes
