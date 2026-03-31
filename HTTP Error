@@ -6,3 +6,14 @@
 
 
 HTTP/1.1 header parser received no bytes
+
+
+Componentpublic class CustomRestClientCustomizer implements RestClientCustomizer {
+
+    @Overridepublic void customize(org.springframework.web.client.RestClient.Builder restClientBuilder) {
+        HttpClient httpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1) // Explicitly set to HTTP/1.1                .build();
+        JdkClientHttpRequestFactory jdkClientHttpRequestFactory = new JdkClientHttpRequestFactory(httpClient);
+        restClientBuilder.requestFactory(jdkClientHttpRequestFactory);
+    }
+}
