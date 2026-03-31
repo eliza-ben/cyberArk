@@ -1,5 +1,6 @@
 package org.fcb.genesis.genesisflow.action.service;
 
+import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLEncoder;
@@ -136,20 +137,22 @@ public class HttpClientActionExecutorService implements ActionExecutor {
 
         addHeaders(requestBuilder, api, accessToken, correlationId, fileContent, multipartBoundary);
 
+        // Change 1: log the outbound request and delegate to retrying sender
+        HttpRequest builtRequest = requestBuilder.build();
+        log.debug("[HttpClient] Sending {} {} headers={}", api.getMethod(), uri, builtRequest.headers().map());
 
-        HttpResponse<byte[]> response = httpClient.send(requestBuilder.build(),
-                HttpResponse.BodyHandlers.ofByteArray());
+        HttpResponse<byte[]> response = sendWithRetry(builtRequest);
 
         return processResponse(response, request.getFileOutput(), bytesReceived);
     }
 
 
     private URI buildUrl(ApiConfig api, String correlationId) {
-        if(api.isPresignedUrl()){
-            try{
+        if (api.isPresignedUrl()) {
+            try {
                 return new URI(api.getUrl());
-            }catch (URISyntaxException e){
-                throw new ActionException("INVALID URL",e.getMessage());
+            } catch (URISyntaxException e) {
+                throw new ActionException("INVALID URL", e.getMessage());
             }
         }
         UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(api.getUrl());
@@ -158,15 +161,13 @@ public class HttpClientActionExecutorService implements ActionExecutor {
             api.getQuery().forEach(builder::queryParam);
         }
 
-        if (!api.isPresignedUrl()) {
-            if (api.isIncludeCorrelationId()) {
-                builder.queryParam("correlation_id", correlationId);
-            }
-            if (api.isIncludeAsofDate()) {
-                String asofDate = api.getAsofDate() != null ? api.getAsofDate() :
-                        LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
-                builder.queryParam("asof_date", asofDate);
-            }
+        if (api.isIncludeCorrelationId()) {
+            builder.queryParam("correlation_id", correlationId);
+        }
+        if (api.isIncludeAsofDate()) {
+            String asofDate = api.getAsofDate() != null ? api.getAsofDate() :
+                    LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
+            builder.queryParam("asof_date", asofDate);
         }
 
         return builder.encode().build().toUri();
@@ -223,6 +224,9 @@ public class HttpClientActionExecutorService implements ActionExecutor {
             if (api.isIncludeCorrelationId()) {
                 requestBuilder.header("X-Correlation-ID", correlationId);
             }
+
+            // Change 3: prevent stale keep-alive connections from causing empty-response failures
+            requestBuilder.header("Connection", "close");
         }
     }
 
@@ -385,6 +389,21 @@ public class HttpClientActionExecutorService implements ActionExecutor {
                 .build();
     }
 
+    // Change 2: retry once on empty-response IOException, forcing a fresh socket on retry
+    private HttpResponse<byte[]> sendWithRetry(HttpRequest request) throws Exception {
+        try {
+            return httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+        } catch (IOException ex) {
+            if (ex.getMessage() != null && ex.getMessage().contains("no bytes")) {
+                log.warn("[HttpClient] Empty response on first attempt (stale connection), retrying: {}", ex.getMessage());
+                HttpRequest retry = HttpRequest.newBuilder(request, (k, v) -> true)
+                        .header("Connection", "close")
+                        .build();
+                return httpClient.send(retry, HttpResponse.BodyHandlers.ofByteArray());
+            }
+            throw ex;
+        }
+    }
 
     private void validateRequest(ApiConfig api) {
         securityService.validateUrl(api.getUrl());
@@ -473,7 +492,7 @@ public class HttpClientActionExecutorService implements ActionExecutor {
 
     private Mono<ActionResponse> handleError(String requestId, String correlationId,
                                              long startTime, Throwable ex) {
-        log.error("[HttpClient] Action execution failed: {}", ex.getMessage());
+        log.error("[HttpClient] Action execution failed: {}", ex.getMessage(), ex);
         String code = ex instanceof ActionException ae ? ae.getCode() : "EXECUTION_FAILED";
 
         return Mono.just(ActionResponse.builder()
