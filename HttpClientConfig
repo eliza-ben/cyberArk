@@ -1,54 +1,48 @@
-
-Copy
-
 package org.fcb.genesis.genesisflow.action.config;
- 
-import org.springframework.boot.web.client.RestClientCustomizer;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
- 
+import org.springframework.web.client.RestClient;
+
 import java.net.http.HttpClient;
 import java.time.Duration;
- 
+
 @Configuration
 public class HttpClientConfig {
 
-
-    static {
-        // Unlocks Connection and Proxy-Connection headers for JDK HttpClient.
-        // These are restricted by default — this must run before any HttpClient is built.
-        // For OpenShift/production, set via JAVA_TOOL_OPTIONS env var instead:
-        //   -Djdk.httpclient.allowRestrictedHeaders=connection,proxy-connection
-        System.setProperty("jdk.httpclient.allowRestrictedHeaders",
-                "connection,proxy-connection");
-    }
- 
     /**
-     * Single shared HttpClient bean used by both HttpClientActionExecutorService
-     * and CustomRestClientCustomizer. Configured for OpenShift egress proxy
-     * compatibility — HTTP/1.1 only, no connection reuse.
+     * Builds the shared JdkClientHttpRequestFactory with proxy-safe settings.
+     * HTTP/1.1 forced to avoid h2 upgrade issues through the OpenShift egress proxy.
      */
     @Bean
-    public HttpClient sharedHttpClient() {
-        return HttpClient.newBuilder()
+    public JdkClientHttpRequestFactory jdkClientHttpRequestFactory() {
+        HttpClient httpClient = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .connectTimeout(Duration.ofSeconds(20))
                 .build();
-    }
- 
-    @Bean
-    public JdkClientHttpRequestFactory jdkClientHttpRequestFactory(HttpClient sharedHttpClient) {
-        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(sharedHttpClient);
+
+        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
         factory.setReadTimeout(Duration.ofSeconds(30));
         return factory;
     }
- 
+
+    /**
+     * Exposes a RestClient.Builder bean with the proxy-safe request factory
+     * and egress proxy headers pre-applied.
+     *
+     * Injected into HttpClientActionExecutorService and any other service
+     * that needs an outbound RestClient.
+     *
+     * Connection/Proxy-Connection headers require:
+     *   -Djdk.httpclient.allowRestrictedHeaders=connection,proxy-connection
+     * Set in JAVA_TOOL_OPTIONS (OpenShift) or VM options (IntelliJ local).
+     */
     @Bean
-    public RestClientCustomizer restClientCustomizer(JdkClientHttpRequestFactory jdkClientHttpRequestFactory) {
-        return restClientBuilder -> restClientBuilder
-                .requestFactory(jdkClientHttpRequestFactory)
+    public RestClient.Builder restClientBuilder(JdkClientHttpRequestFactory factory) {
+        return RestClient.builder()
+                .requestFactory(factory)
                 .defaultHeader("Connection", "close")
                 .defaultHeader("Proxy-Connection", "close");
     }
