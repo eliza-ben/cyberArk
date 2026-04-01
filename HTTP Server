@@ -52,24 +52,22 @@ public class HttpClientActionExecutorService implements ActionExecutor {
     private final FileService fileService;
     private final ResponseExtractionService extractionService;
     private final ObjectMapper objectMapper;
-
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .connectTimeout(Duration.ofSeconds(10))
-            .build();
+    private final HttpClient httpClient; // injected from HttpClientConfig — no longer created inline
 
     public HttpClientActionExecutorService(ActionProperties properties,
                                            OAuthTokenService oAuthTokenService,
                                            OutboundSecurityService securityService,
                                            FileService fileService,
                                            ResponseExtractionService extractionService,
-                                           ObjectMapper objectMapper) {
+                                           ObjectMapper objectMapper,
+                                           HttpClient sharedHttpClient) { // <-- injected bean
         this.properties = properties;
         this.oAuthTokenService = oAuthTokenService;
         this.securityService = securityService;
         this.fileService = fileService;
         this.extractionService = extractionService;
         this.objectMapper = objectMapper;
+        this.httpClient = sharedHttpClient;
     }
 
     @Override
@@ -111,7 +109,6 @@ public class HttpClientActionExecutorService implements ActionExecutor {
                 .onErrorResume(ex -> handleError(requestId, correlationId, startTime, ex));
     }
 
-
     private RawResponse executeTargetCall(ActionRequest request, String accessToken,
                                           String correlationId, int timeout,
                                           AtomicLong bytesSent, AtomicLong bytesReceived) throws Exception {
@@ -137,7 +134,6 @@ public class HttpClientActionExecutorService implements ActionExecutor {
 
         addHeaders(requestBuilder, api, accessToken, correlationId, fileContent, multipartBoundary);
 
-        // Change 1: log the outbound request and delegate to retrying sender
         HttpRequest builtRequest = requestBuilder.build();
         log.debug("[HttpClient] Sending {} {} headers={}", api.getMethod(), uri, builtRequest.headers().map());
 
@@ -145,7 +141,6 @@ public class HttpClientActionExecutorService implements ActionExecutor {
 
         return processResponse(response, request.getFileOutput(), bytesReceived);
     }
-
 
     private URI buildUrl(ApiConfig api, String correlationId) {
         if (api.isPresignedUrl()) {
@@ -172,7 +167,6 @@ public class HttpClientActionExecutorService implements ActionExecutor {
 
         return builder.encode().build().toUri();
     }
-
 
     private void addHeaders(HttpRequest.Builder requestBuilder, ApiConfig api,
                             String accessToken, String correlationId,
@@ -225,8 +219,9 @@ public class HttpClientActionExecutorService implements ActionExecutor {
                 requestBuilder.header("X-Correlation-ID", correlationId);
             }
 
-            // Change 3: prevent stale keep-alive connections from causing empty-response failures
+            // Prevent stale keep-alive reuse on both pod→proxy and proxy→upstream legs
             requestBuilder.header("Connection", "close");
+            requestBuilder.header("Proxy-Connection", "close");
         }
     }
 
@@ -234,7 +229,6 @@ public class HttpClientActionExecutorService implements ActionExecutor {
         return "Basic " + Base64.getEncoder()
                 .encodeToString((username + ":" + password).getBytes(StandardCharsets.UTF_8));
     }
-
 
     private HttpRequest.BodyPublisher buildBodyPublisher(ApiConfig api,
                                                          FileService.FileContent fileContent,
@@ -331,7 +325,6 @@ public class HttpClientActionExecutorService implements ActionExecutor {
         return result;
     }
 
-
     private RawResponse processResponse(HttpResponse<byte[]> response,
                                         FileOutputConfig fileOutput,
                                         AtomicLong bytesReceived) {
@@ -389,7 +382,6 @@ public class HttpClientActionExecutorService implements ActionExecutor {
                 .build();
     }
 
-    // Change 2: retry once on empty-response IOException, forcing a fresh socket on retry
     private HttpResponse<byte[]> sendWithRetry(HttpRequest request) throws Exception {
         try {
             return httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
@@ -398,6 +390,7 @@ public class HttpClientActionExecutorService implements ActionExecutor {
                 log.warn("[HttpClient] Empty response on first attempt (stale connection), retrying: {}", ex.getMessage());
                 HttpRequest retry = HttpRequest.newBuilder(request, (k, v) -> true)
                         .header("Connection", "close")
+                        .header("Proxy-Connection", "close")
                         .build();
                 return httpClient.send(retry, HttpResponse.BodyHandlers.ofByteArray());
             }
