@@ -31,3 +31,26 @@ Componentpublic class CustomRestClientCustomizer implements RestClientCustomizer
 spring:
   application:
     jvm-args: -Djdk.httpclient.allowRestrictedHeaders=connection,proxy-connection
+
+curl -x https://egress-proxy.openshift-egress.svc:443 -U dv_:ZP -I https://jw3frab4s4ghupkx.s3.us-west-2.amazonaws.com/files/demo/100181/156641/InvoiceGenericFormat.xlsx?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20260401T16015
+4Z&X-Amz-SignedHeaders=content-md5%3Bhost&X-Amz-Expires=604800&X-Amz-Credential=AKIAYEJSAYU2IKMMT6GQ%2F20260401%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Signature=10a15cb9a5e839b1d7ef9bd81c3ce48044fae716e7f29def5829406ea055807
+sh: X-Amz-Date=20260401T160154Z: not found
+sh: X-Amz-SignedHeaders=content-md5%3Bhost: not found
+sh: X-Amz-Signature=10a15cb9a5e839b1d7ef9bd81c3ce48044fae716e7f29def5829406ea055807: not found
+[2]   Done(127)                  X-Amz-Date=20260401T160154Z
+sh: X-Amz-Credential=AKIAYEJSAYU2IKMMT6GQ%2F20260401%2Fus-west-2%2Fs3%2Faws4_request: not found
+/workspace # sh: X-Amz-Expires=604800: not found
+HTTP/1.1 407 Proxy Authentication Required
+Server: squid/5.5
+Mime-Version: 1.0
+Date: Wed, 01 Apr 2026 16:36:32 GMT
+Content-Type: text/html;charset=utf-8
+Content-Length: 3747
+X-Squid-Error: ERR_CACHE_ACCESS_DENIED 0
+Vary: Accept-Language
+Content-Language: en
+Proxy-Authenticate: Basic realm="Squid proxy-caching web server"
+X-Cache: MISS from egress-proxy-7689b6b77c-qxsgp
+X-Cache-Lookup: NONE from egress-proxy-7689b6b77c-qxsgp:8080
+Via: 1.1 egress-proxy-7689b6b77c-qxsgp (squid/5.5)
+Connection: keep-alive
