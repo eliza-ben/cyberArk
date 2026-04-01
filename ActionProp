@@ -1,0 +1,59 @@
+action:
+  security:
+    mode: BASIC
+    bearer-token: ${ACTION_BEARER_TOKEN:your-secret-token}
+    basic-username: ${ACTION_BASIC_USER:admin}
+    basic-password: ${ACTION_BASIC_PASSWORD:aj8U9*M)^s2kEi}
+    jwt-issuer-uri: ${ACTION_JWT_ISSUER:}
+    jwt-audience: ${ACTION_JWT_AUDIENCE:}
+    allowed-hosts:
+      - "*.example.com"
+      - "api.github.com"
+      - "api.stripe.com"
+      - "jsonplaceholder.typicode.com"
+      - "sandboxapp.oncentrl.net"
+      - "sandboxauth.oncentrl.net"
+      - "jw3frab4s4ghupkx.s3.us-west-2.amazonaws.com"
+    allowed-methods:
+      - GET
+      - POST
+      - PUT
+      - PATCH
+      - DELETE
+      - HEAD
+      - OPTIONS
+    blocked-header-prefixes:
+      - x-forwarded
+      - x-real-ip
+
+  oauth:
+    cache-enabled: false
+    cache-skew-seconds: 30
+    default-timeout-sec: 30
+    centrl:
+      token-url: "https://sandboxauth.oncentrl.net/Authorization/oauth/token"
+      client-id: ${action.oauth.centrl.client-id}
+      client-secret: ${action.oauth.centrl.client-secret}
+      grant-type: "password"
+      username: ${action.oauth.centrl.username}
+      password: ${action.oauth.centrl.password}
+
+
+  limits:
+    max-response-bytes: 104857600
+    max-request-bytes: 104857600
+    default-timeout-sec: 30
+    max-timeout-sec: 300
+
+  base-dirs:
+    DATA_IN: "/files/Inbound"
+    DATA_OUT: ${DATA_OUT_DIR:/data/output}
+    TEMP: ${TEMP_DIR:/tmp}
+
+  credentials:
+    example-oauth:
+      client-id: ${EXAMPLE_CLIENT_ID:}
+      client-secret: ${EXAMPLE_CLIENT_SECRET:}
+    example-basic:
+      username: ${EXAMPLE_BASIC_USER:}
+      password: ${EXAMPLE_BASIC_PASSWORD:}
