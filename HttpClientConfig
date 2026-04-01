@@ -11,10 +11,7 @@ import java.time.Duration;
 @Configuration
 public class HttpClientConfig {
 
-    /**
-     * Builds the shared JdkClientHttpRequestFactory with proxy-safe settings.
-     * HTTP/1.1 forced to avoid h2 upgrade issues through the OpenShift egress proxy.
-     */
+
     @Bean
     public JdkClientHttpRequestFactory jdkClientHttpRequestFactory() {
         HttpClient httpClient = HttpClient.newBuilder()
