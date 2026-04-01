@@ -23,3 +23,8 @@ Componentpublic class CustomRestClientCustomizer implements RestClientCustomizer
         restClientBuilder.requestFactory(jdkClientHttpRequestFactory);
     }
 }
+
+# application.yml
+spring:
+  application:
+    jvm-args: -Djdk.httpclient.allowRestrictedHeaders=connection,proxy-connection
