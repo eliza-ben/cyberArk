@@ -1,4 +1,14 @@
- WARN  io.netty.channel.ChannelInitializer - Failed to initialize a channel. Closing: [id: 0x2dc8c69f]
+
+ApiActionRunnerApplicationTests.contextLoads » IllegalState Failed to load ApplicationContext for [WebMergedContextConfiguration@aca594d testClass = org.fcb.genesis.genesisflow.action.ApiActionRunnerApplicationTests
+, locations = [], classes = [org.fcb.genesis.genesisflow.action.ApiActionRunnerApplication], contextInitializerClasses = [], activeProfiles = ["test"], propertySourceDescriptors = [], propertySourceProperties = ["org.springfr
+amework.boot.test.context.SpringBootTestContextBootstrapper=true"], contextCustomizers = [org.springframework.test.context.support.DynamicPropertiesContextCustomizer@0, org.springframework.boot.test.context.filter.ExcludeFilt
+erContextCustomizer@1517f633, org.springframework.boot.test.json.DuplicateJsonObjectContextCustomizerFactory$DuplicateJsonObjectContextCustomizer@466d49f0, org.springframework.boot.test.mock.mockito.MockitoContextCustomizer@0
+, org.springframework.boot.test.web.client.TestRestTemplateContextCustomizer@29182679, org.springframework.boot.test.web.reactive.server.WebTestClientContextCustomizer@6a84bc2a, org.springframework.boot.test.web.reactor.netty
+.DisableReactorResourceFactoryGlobalResourcesContextCustomizerFactory$DisableReactorResourceFactoryGlobalResourcesContextCustomizerCustomizer@5b3f3ba0, org.springframework.boot.test.autoconfigure.OnFailureConditionReportConte
+xtCustomizerFactory$OnFailureConditionReportContextCustomizer@4b1abd11, org.springframework.boot.test.autoconfigure.actuate.observability.ObservabilityContextCustomizerFactory$DisableObservabilityContextCustomizer@1f, org.spr
+ingframework.boot.test.autoconfigure.properties.PropertyMappingContextCustomizer@0, org.springframework.boot.test.autoconfigure.web.servlet.WebDriverContextCustomizer@201aa8c1, org.springframework.boot.test.context.SpringBootTestAnnotation@b4ed74d9], resourceBasePath = "src/main/webapp", contextLoader = org.springframework.boot.test.context.SpringBootContextLoader, parent = null]
+
+WARN  io.netty.channel.ChannelInitializer - Failed to initialize a channel. Closing: [id: 0x2dc8c69f]
 java.lang.NoClassDefFoundError: io/netty/util/LeakPresenceDetector
 	at io.netty.handler.codec.http.HttpObjectEncoder.<clinit>(HttpObjectEncoder.java:62)
 	at io.netty.handler.codec.http.HttpClientCodec.<init>(HttpClientCodec.java:241)
