@@ -1,0 +1,45 @@
+
+Copy
+
+package org.fcb.genesis.genesisflow.action.config;
+ 
+import org.springframework.boot.web.client.RestClientCustomizer;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
+ 
+import java.net.http.HttpClient;
+import java.time.Duration;
+ 
+@Configuration
+public class HttpClientConfig {
+ 
+    /**
+     * Single shared HttpClient bean used by both HttpClientActionExecutorService
+     * and CustomRestClientCustomizer. Configured for OpenShift egress proxy
+     * compatibility — HTTP/1.1 only, no connection reuse.
+     */
+    @Bean
+    public HttpClient sharedHttpClient() {
+        return HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .connectTimeout(Duration.ofSeconds(20))
+                .build();
+    }
+ 
+    @Bean
+    public JdkClientHttpRequestFactory jdkClientHttpRequestFactory(HttpClient sharedHttpClient) {
+        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(sharedHttpClient);
+        factory.setReadTimeout(Duration.ofSeconds(30));
+        return factory;
+    }
+ 
+    @Bean
+    public RestClientCustomizer restClientCustomizer(JdkClientHttpRequestFactory jdkClientHttpRequestFactory) {
+        return restClientBuilder -> restClientBuilder
+                .requestFactory(jdkClientHttpRequestFactory)
+                .defaultHeader("Connection", "close")
+                .defaultHeader("Proxy-Connection", "close");
+    }
+}
