@@ -1,46 +1,36 @@
 package org.fcb.genesis.genesisflow.action.config;
 
+import org.apache.hc.client5.http.classic.HttpClient;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.client5.http.impl.io.BasicHttpClientConnectionManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
-
-import java.net.http.HttpClient;
-import java.time.Duration;
 
 @Configuration
 public class HttpClientConfig {
 
+    @Bean
+    public HttpClient apacheHttpClient() {
+        return HttpClients.custom()
+                // Fresh connection per request — prevents stale S3 connection resets
+                .setConnectionManager(new BasicHttpClientConnectionManager())
+                .build();
+    }
 
     @Bean
-    public JdkClientHttpRequestFactory jdkClientHttpRequestFactory() {
-        HttpClient httpClient = HttpClient.newBuilder()
-                .version(HttpClient.Version.HTTP_1_1)
-                .followRedirects(HttpClient.Redirect.NORMAL)
-                .connectTimeout(Duration.ofSeconds(20))
-                .build();
-
-        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
-        factory.setReadTimeout(Duration.ofSeconds(30));
+    public HttpComponentsClientHttpRequestFactory httpRequestFactory(HttpClient apacheHttpClient) {
+        HttpComponentsClientHttpRequestFactory factory =
+                new HttpComponentsClientHttpRequestFactory(apacheHttpClient);
+        factory.setConnectTimeout(20000);
+        factory.setReadTimeout(30000);
         return factory;
     }
 
-    /**
-     * Exposes a RestClient.Builder bean with the proxy-safe request factory
-     * and egress proxy headers pre-applied.
-     *
-     * Injected into HttpClientActionExecutorService and any other service
-     * that needs an outbound RestClient.
-     *
-     * Connection/Proxy-Connection headers require:
-     *   -Djdk.httpclient.allowRestrictedHeaders=connection,proxy-connection
-     * Set in JAVA_TOOL_OPTIONS (OpenShift) or VM options (IntelliJ local).
-     */
     @Bean
-    public RestClient.Builder restClientBuilder(JdkClientHttpRequestFactory factory) {
+    public RestClient.Builder restClientBuilder(HttpComponentsClientHttpRequestFactory factory) {
         return RestClient.builder()
-                .requestFactory(factory)
-                .defaultHeader("Connection", "close")
-                .defaultHeader("Proxy-Connection", "close");
+                .requestFactory(factory);
     }
 }
