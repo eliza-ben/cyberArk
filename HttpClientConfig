@@ -13,6 +13,16 @@ import java.time.Duration;
  
 @Configuration
 public class HttpClientConfig {
+
+
+    static {
+        // Unlocks Connection and Proxy-Connection headers for JDK HttpClient.
+        // These are restricted by default — this must run before any HttpClient is built.
+        // For OpenShift/production, set via JAVA_TOOL_OPTIONS env var instead:
+        //   -Djdk.httpclient.allowRestrictedHeaders=connection,proxy-connection
+        System.setProperty("jdk.httpclient.allowRestrictedHeaders",
+                "connection,proxy-connection");
+    }
  
     /**
      * Single shared HttpClient bean used by both HttpClientActionExecutorService
