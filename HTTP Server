@@ -4,9 +4,6 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLEncoder;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -17,6 +14,20 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
+
+import org.apache.hc.client5.http.classic.methods.HttpDelete;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.classic.methods.HttpHead;
+import org.apache.hc.client5.http.classic.methods.HttpOptions;
+import org.apache.hc.client5.http.classic.methods.HttpPatch;
+import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.client5.http.classic.methods.HttpPut;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.core5.http.ClassicHttpRequest;
+import org.apache.hc.core5.http.ClassicHttpResponse;
+import org.apache.hc.core5.http.ContentType;
+import org.apache.hc.core5.http.io.entity.ByteArrayEntity;
+import org.apache.hc.core5.http.io.entity.EntityUtils;
 
 import org.fcb.genesis.genesisflow.action.config.ActionProperties;
 import org.fcb.genesis.genesisflow.action.dto.request.ActionRequest;
@@ -52,7 +63,7 @@ public class HttpClientActionExecutorService implements ActionExecutor {
     private final FileService fileService;
     private final ResponseExtractionService extractionService;
     private final ObjectMapper objectMapper;
-    private final HttpClient httpClient; // injected from HttpClientConfig — no longer created inline
+    private final CloseableHttpClient httpClient;
 
     public HttpClientActionExecutorService(ActionProperties properties,
                                            OAuthTokenService oAuthTokenService,
@@ -60,14 +71,14 @@ public class HttpClientActionExecutorService implements ActionExecutor {
                                            FileService fileService,
                                            ResponseExtractionService extractionService,
                                            ObjectMapper objectMapper,
-                                           HttpClient sharedHttpClient) { // <-- injected bean
+                                           CloseableHttpClient httpClient) {
         this.properties = properties;
         this.oAuthTokenService = oAuthTokenService;
         this.securityService = securityService;
         this.fileService = fileService;
         this.extractionService = extractionService;
         this.objectMapper = objectMapper;
-        this.httpClient = sharedHttpClient;
+        this.httpClient = httpClient;
     }
 
     @Override
@@ -113,7 +124,6 @@ public class HttpClientActionExecutorService implements ActionExecutor {
                                           String correlationId, int timeout,
                                           AtomicLong bytesSent, AtomicLong bytesReceived) throws Exception {
         ApiConfig api = request.getApi();
-
         URI uri = buildUrl(api, correlationId);
 
         FileService.FileContent fileContent = fileService.loadFileInput(request.getFileInput())
@@ -125,21 +135,99 @@ public class HttpClientActionExecutorService implements ActionExecutor {
             multipartBoundary = UUID.randomUUID().toString();
         }
 
-        HttpRequest.BodyPublisher bodyPublisher = buildBodyPublisher(api, fileContent, bytesSent, multipartBoundary);
+        ClassicHttpRequest apacheRequest = buildApacheRequest(api, uri, fileContent, bytesSent, multipartBoundary);
 
-        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
-                .uri(uri)
-                .timeout(Duration.ofSeconds(timeout))
-                .method(api.getMethod().name(), bodyPublisher);
+        addHeaders(apacheRequest, api, accessToken, correlationId, fileContent, multipartBoundary);
 
-        addHeaders(requestBuilder, api, accessToken, correlationId, fileContent, multipartBoundary);
+        log.debug("[HttpClient] Sending {} {}", api.getMethod(), uri);
 
-        HttpRequest builtRequest = requestBuilder.build();
-        log.debug("[HttpClient] Sending {} {} headers={}", api.getMethod(), uri, builtRequest.headers().map());
+        return sendWithRetry(apacheRequest, request.getFileOutput(), bytesReceived);
+    }
 
-        HttpResponse<byte[]> response = sendWithRetry(builtRequest);
+    private ClassicHttpRequest buildApacheRequest(ApiConfig api, URI uri,
+                                                   FileService.FileContent fileContent,
+                                                   AtomicLong bytesSent,
+                                                   String multipartBoundary) throws JsonProcessingException {
+        ClassicHttpRequest request = switch (api.getMethod()) {
+            case GET     -> new HttpGet(uri);
+            case POST    -> new HttpPost(uri);
+            case PUT     -> new HttpPut(uri);
+            case DELETE  -> new HttpDelete(uri);
+            case PATCH   -> new HttpPatch(uri);
+            case HEAD    -> new HttpHead(uri);
+            case OPTIONS -> new HttpOptions(uri);
+        };
 
-        return processResponse(response, request.getFileOutput(), bytesReceived);
+        if (!isBodylessMethod(api.getMethod())) {
+            byte[] body = buildBody(api, fileContent, bytesSent, multipartBoundary);
+            if (body != null) {
+                ContentType contentType = resolveContentType(api, fileContent);
+                request.setEntity(new ByteArrayEntity(body, contentType));
+            }
+        }
+
+        return request;
+    }
+
+    private byte[] buildBody(ApiConfig api, FileService.FileContent fileContent,
+                              AtomicLong bytesSent, String multipartBoundary) throws JsonProcessingException {
+        PayloadType payloadType = api.getPayloadType() != null ? api.getPayloadType() : PayloadType.NONE;
+
+        return switch (payloadType) {
+            case JSON -> {
+                if (api.getPayload() != null) {
+                    byte[] bytes = objectMapper.writeValueAsBytes(api.getPayload());
+                    bytesSent.set(bytes.length);
+                    yield bytes;
+                }
+                yield null;
+            }
+            case TEXT -> {
+                if (StringUtils.hasText(api.getPayloadText())) {
+                    byte[] bytes = api.getPayloadText().getBytes(StandardCharsets.UTF_8);
+                    bytesSent.set(bytes.length);
+                    yield bytes;
+                }
+                yield null;
+            }
+            case FORM_URLENCODED -> {
+                if (api.getPayload() instanceof Map<?, ?> map) {
+                    StringBuilder sb = new StringBuilder();
+                    map.forEach((k, v) -> {
+                        if (!sb.isEmpty()) sb.append('&');
+                        sb.append(urlEncode(k.toString()))
+                                .append('=')
+                                .append(urlEncode(v.toString()));
+                    });
+                    byte[] bytes = sb.toString().getBytes(StandardCharsets.UTF_8);
+                    bytesSent.set(bytes.length);
+                    yield bytes;
+                }
+                yield null;
+            }
+            case MULTIPART_FORM -> buildMultipartBody(api, fileContent, multipartBoundary, bytesSent);
+            case FILE_BYTES -> {
+                if (fileContent.bytes() == null) {
+                    throw new ActionException("FILE_MISSING", "FILE_BYTES payload requires file_input");
+                }
+                bytesSent.set(fileContent.bytes().length);
+                yield fileContent.bytes();
+            }
+            case NONE -> null;
+        };
+    }
+
+    private ContentType resolveContentType(ApiConfig api, FileService.FileContent fileContent) {
+        return switch (api.getPayloadType() != null ? api.getPayloadType() : PayloadType.NONE) {
+            case JSON            -> ContentType.APPLICATION_JSON;
+            case TEXT            -> ContentType.TEXT_PLAIN;
+            case FORM_URLENCODED -> ContentType.APPLICATION_FORM_URLENCODED;
+            case MULTIPART_FORM  -> ContentType.MULTIPART_FORM_DATA;
+            case FILE_BYTES      -> fileContent.contentType() != null
+                    ? ContentType.parse(fileContent.contentType())
+                    : ContentType.APPLICATION_OCTET_STREAM;
+            default              -> ContentType.APPLICATION_OCTET_STREAM;
+        };
     }
 
     private URI buildUrl(ApiConfig api, String correlationId) {
@@ -155,7 +243,6 @@ public class HttpClientActionExecutorService implements ActionExecutor {
         if (api.getQuery() != null) {
             api.getQuery().forEach(builder::queryParam);
         }
-
         if (api.isIncludeCorrelationId()) {
             builder.queryParam("correlation_id", correlationId);
         }
@@ -168,29 +255,13 @@ public class HttpClientActionExecutorService implements ActionExecutor {
         return builder.encode().build().toUri();
     }
 
-    private void addHeaders(HttpRequest.Builder requestBuilder, ApiConfig api,
-                            String accessToken, String correlationId,
-                            FileService.FileContent fileContent, String multipartBoundary) {
-        if (!isBodylessMethod(api.getMethod())) {
-            switch (api.getPayloadType() != null ? api.getPayloadType() : PayloadType.NONE) {
-                case JSON -> requestBuilder.header("Content-Type", "application/json");
-                case TEXT -> requestBuilder.header("Content-Type", "text/plain");
-                case FORM_URLENCODED -> requestBuilder.header("Content-Type", "application/x-www-form-urlencoded");
-                case MULTIPART_FORM -> requestBuilder.header("Content-Type",
-                        "multipart/form-data; boundary=" + multipartBoundary);
-                case FILE_BYTES -> {
-                    String ct = fileContent.contentType() != null
-                            ? fileContent.contentType() : "application/octet-stream";
-                    requestBuilder.header("Content-Type", ct);
-                }
-                default -> { }
-            }
-        }
-
+    private void addHeaders(ClassicHttpRequest request, ApiConfig api,
+                             String accessToken, String correlationId,
+                             FileService.FileContent fileContent, String multipartBoundary) {
         if (api.getHeaders() != null) {
             api.getHeaders().forEach((name, value) -> {
                 if (!securityService.isHeaderForbidden(name)) {
-                    requestBuilder.header(name, value);
+                    request.setHeader(name, value);
                 } else {
                     log.debug("Skipping forbidden header: {}", name);
                 }
@@ -199,92 +270,34 @@ public class HttpClientActionExecutorService implements ActionExecutor {
 
         if (!api.isPresignedUrl()) {
             if (StringUtils.hasText(accessToken)) {
-                requestBuilder.header("Authorization", "Bearer " + accessToken);
+                request.setHeader("Authorization", "Bearer " + accessToken);
             } else if (StringUtils.hasText(api.getBearerToken())) {
-                requestBuilder.header("Authorization", "Bearer " + api.getBearerToken());
+                request.setHeader("Authorization", "Bearer " + api.getBearerToken());
             } else if (api.getBasicAuth() != null &&
                     StringUtils.hasText(api.getBasicAuth().getUsername())) {
-                requestBuilder.header("Authorization",
+                request.setHeader("Authorization",
                         buildBasicAuth(api.getBasicAuth().getUsername(), api.getBasicAuth().getPassword()));
             } else if (StringUtils.hasText(api.getCredentialRef())) {
                 ActionProperties.CredentialEntry cred =
                         properties.getCredentials().get(api.getCredentialRef());
                 if (cred != null && StringUtils.hasText(cred.getUsername())) {
-                    requestBuilder.header("Authorization",
+                    request.setHeader("Authorization",
                             buildBasicAuth(cred.getUsername(), cred.getPassword()));
                 }
             }
 
             if (api.isIncludeCorrelationId()) {
-                requestBuilder.header("X-Correlation-ID", correlationId);
+                request.setHeader("X-Correlation-ID", correlationId);
             }
 
-            // Prevent stale keep-alive reuse on both pod→proxy and proxy→upstream legs
-            requestBuilder.header("Connection", "close");
-            requestBuilder.header("Proxy-Connection", "close");
+            request.setHeader("Connection", "close");
+            request.setHeader("Proxy-Connection", "close");
         }
     }
 
     private String buildBasicAuth(String username, String password) {
         return "Basic " + Base64.getEncoder()
                 .encodeToString((username + ":" + password).getBytes(StandardCharsets.UTF_8));
-    }
-
-    private HttpRequest.BodyPublisher buildBodyPublisher(ApiConfig api,
-                                                         FileService.FileContent fileContent,
-                                                         AtomicLong bytesSent,
-                                                         String multipartBoundary) throws JsonProcessingException {
-        PayloadType payloadType = api.getPayloadType() != null ? api.getPayloadType() : PayloadType.NONE;
-
-        if (isBodylessMethod(api.getMethod())) {
-            return HttpRequest.BodyPublishers.noBody();
-        }
-
-        return switch (payloadType) {
-            case JSON -> {
-                if (api.getPayload() != null) {
-                    byte[] bytes = objectMapper.writeValueAsBytes(api.getPayload());
-                    bytesSent.set(bytes.length);
-                    yield HttpRequest.BodyPublishers.ofByteArray(bytes);
-                }
-                yield HttpRequest.BodyPublishers.noBody();
-            }
-            case TEXT -> {
-                if (StringUtils.hasText(api.getPayloadText())) {
-                    byte[] bytes = api.getPayloadText().getBytes(StandardCharsets.UTF_8);
-                    bytesSent.set(bytes.length);
-                    yield HttpRequest.BodyPublishers.ofByteArray(bytes);
-                }
-                yield HttpRequest.BodyPublishers.noBody();
-            }
-            case FORM_URLENCODED -> {
-                if (api.getPayload() instanceof Map<?, ?> map) {
-                    StringBuilder sb = new StringBuilder();
-                    map.forEach((k, v) -> {
-                        if (!sb.isEmpty()) sb.append('&');
-                        sb.append(urlEncode(k.toString()))
-                                .append('=')
-                                .append(urlEncode(v.toString()));
-                    });
-                    byte[] bytes = sb.toString().getBytes(StandardCharsets.UTF_8);
-                    bytesSent.set(bytes.length);
-                    yield HttpRequest.BodyPublishers.ofByteArray(bytes);
-                }
-                yield HttpRequest.BodyPublishers.noBody();
-            }
-            case MULTIPART_FORM -> {
-                byte[] bytes = buildMultipartBody(api, fileContent, multipartBoundary, bytesSent);
-                yield HttpRequest.BodyPublishers.ofByteArray(bytes);
-            }
-            case FILE_BYTES -> {
-                if (fileContent.bytes() == null) {
-                    throw new ActionException("FILE_MISSING", "FILE_BYTES payload requires file_input");
-                }
-                bytesSent.set(fileContent.bytes().length);
-                yield HttpRequest.BodyPublishers.ofByteArray(fileContent.bytes());
-            }
-            case NONE -> HttpRequest.BodyPublishers.noBody();
-        };
     }
 
     private byte[] buildMultipartBody(ApiConfig api, FileService.FileContent fileContent,
@@ -297,12 +310,10 @@ public class HttpClientActionExecutorService implements ActionExecutor {
                 for (var entry : map.entrySet()) {
                     String part = "--" + boundary + CRLF +
                             "Content-Disposition: form-data; name=\"" + entry.getKey() + "\"" + CRLF +
-                            CRLF +
-                            entry.getValue() + CRLF;
+                            CRLF + entry.getValue() + CRLF;
                     parts.write(part.getBytes(StandardCharsets.UTF_8));
                 }
             }
-
             if (fileContent.bytes() != null) {
                 String filename = fileContent.filename() != null ? fileContent.filename() : "file";
                 String ct = fileContent.contentType() != null ? fileContent.contentType() : "application/octet-stream";
@@ -313,9 +324,7 @@ public class HttpClientActionExecutorService implements ActionExecutor {
                 parts.write(fileContent.bytes());
                 parts.write(CRLF.getBytes(StandardCharsets.UTF_8));
             }
-
             parts.write(("--" + boundary + "--" + CRLF).getBytes(StandardCharsets.UTF_8));
-
         } catch (Exception e) {
             throw new ActionException("MULTIPART_BUILD_FAILED", "Failed to build multipart body: " + e.getMessage());
         }
@@ -325,16 +334,29 @@ public class HttpClientActionExecutorService implements ActionExecutor {
         return result;
     }
 
-    private RawResponse processResponse(HttpResponse<byte[]> response,
-                                        FileOutputConfig fileOutput,
-                                        AtomicLong bytesReceived) {
-        int status = response.statusCode();
-        Map<String, String> headers = new HashMap<>();
-        response.headers().map().forEach((name, values) -> {
-            if (!values.isEmpty()) headers.put(name, values.get(0));
-        });
+    private RawResponse sendWithRetry(ClassicHttpRequest request,
+                                      FileOutputConfig fileOutput,
+                                      AtomicLong bytesReceived) throws IOException {
+        try {
+            return httpClient.execute(request, response -> processResponse(response, bytesReceived));
+        } catch (IOException ex) {
+            log.warn("[HttpClient] Request failed, retrying once: {}", ex.getMessage());
+            request.setHeader("Connection", "close");
+            return httpClient.execute(request, response -> processResponse(response, bytesReceived));
+        }
+    }
 
-        byte[] bodyBytes = response.body() != null ? response.body() : new byte[0];
+    private RawResponse processResponse(ClassicHttpResponse response,
+                                        AtomicLong bytesReceived) throws IOException {
+        int status = response.getCode();
+        Map<String, String> headers = new HashMap<>();
+        for (var header : response.getHeaders()) {
+            headers.put(header.getName(), header.getValue());
+        }
+
+        byte[] bodyBytes = response.getEntity() != null
+                ? EntityUtils.toByteArray(response.getEntity())
+                : new byte[0];
         bytesReceived.set(bodyBytes.length);
 
         long maxBytes = properties.getLimits().getMaxResponseBytes();
@@ -357,8 +379,8 @@ public class HttpClientActionExecutorService implements ActionExecutor {
     }
 
     private ResponseBody buildResponseBody(byte[] bodyBytes, Map<String, String> headers) {
-        String contentType = headers.getOrDefault("content-type",
-                headers.getOrDefault("Content-Type", ""));
+        String contentType = headers.getOrDefault("Content-Type",
+                headers.getOrDefault("content-type", ""));
 
         if (contentType.contains("application/json")) {
             try {
@@ -380,22 +402,6 @@ public class HttpClientActionExecutorService implements ActionExecutor {
                 .mode(BodyMode.BASE64)
                 .base64(Base64.getEncoder().encodeToString(bodyBytes))
                 .build();
-    }
-
-    private HttpResponse<byte[]> sendWithRetry(HttpRequest request) throws Exception {
-        try {
-            return httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
-        } catch (IOException ex) {
-            if (ex.getMessage() != null && ex.getMessage().contains("no bytes")) {
-                log.warn("[HttpClient] Empty response on first attempt (stale connection), retrying: {}", ex.getMessage());
-                HttpRequest retry = HttpRequest.newBuilder(request, (k, v) -> true)
-                        .header("Connection", "close")
-                        .header("Proxy-Connection", "close")
-                        .build();
-                return httpClient.send(retry, HttpResponse.BodyHandlers.ofByteArray());
-            }
-            throw ex;
-        }
     }
 
     private void validateRequest(ApiConfig api) {
