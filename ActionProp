@@ -57,3 +57,250 @@ action:
     example-basic:
       username: ${EXAMPLE_BASIC_USER:}
       password: ${EXAMPLE_BASIC_PASSWORD:}
+
+
+
+
+
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class OAuthTokenService {
+
+    private static final Pattern PLACEHOLDER = Pattern.compile("\\$\\{([^}]+)\\}");
+
+    private final WebClient.Builder webClientBuilder;
+    private final ActionProperties properties;
+    private final OutboundSecurityService securityService;
+    private final Environment springEnvironment;  // ← injected for placeholder resolution
+
+    private final Map<CacheKey, CachedToken> tokenCache = new ConcurrentHashMap<>();
+
+    public record TokenResult(String accessToken, TokenCallInfo tokenCallInfo) {}
+
+    // ─── Public Entry Point ───────────────────────────────────────────────────
+
+    public Mono<TokenResult> getToken(AuthConfig authConfig, int timeoutSec) {
+        if (authConfig == null || authConfig.getType() != AuthConfig.AuthType.OAUTH) {
+            return Mono.just(new TokenResult(null, TokenCallInfo.builder()
+                .used(false)
+                .build()));
+        }
+
+        // Resolve service config from ActionProperties by service name
+        String serviceName = authConfig.getService();
+        ActionProperties.OAuthServiceConfig config;
+
+        try {
+            config = resolveServiceConfig(serviceName);
+        } catch (ActionException e) {
+            return Mono.error(e);
+        }
+
+        log.debug("Resolved OAuth config for service: {}, tokenUrl: {}, grantType: {}",
+            serviceName, config.getTokenUrl(), config.getGrantType());
+
+        securityService.validateUrl(config.getTokenUrl());
+
+        CacheKey cacheKey = new CacheKey(
+            config.getTokenUrl(),
+            config.getClientId(),
+            config.getScope(),
+            null
+        );
+
+        // Return cached token if valid
+        if (properties.getOauth().isCacheEnabled()) {
+            CachedToken cached = tokenCache.get(cacheKey);
+            if (cached != null && !cached.isExpired(properties.getOauth().getCacheSkewSeconds())) {
+                log.debug("Using cached OAuth token for service: {}", serviceName);
+                return Mono.just(new TokenResult(cached.getAccessToken(), TokenCallInfo.builder()
+                    .used(true)
+                    .cached(true)
+                    .expiresIn(cached.getRemainingSeconds())
+                    .build()));
+            }
+        }
+
+        return fetchNewToken(config, timeoutSec, cacheKey);
+    }
+
+    // ─── Service Config Resolution ────────────────────────────────────────────
+
+    private ActionProperties.OAuthServiceConfig resolveServiceConfig(String serviceName) {
+        if (!StringUtils.hasText(serviceName)) {
+            throw new ActionException("OAUTH_SERVICE_MISSING",
+                "auth_config.service must not be empty");
+        }
+
+        ActionProperties.OAuthServiceConfig config = switch (serviceName) {
+            case "centrl"       -> properties.getOauth().getCentrl();
+            case "payment"      -> properties.getOauth().getPayment();
+            case "notification" -> properties.getOauth().getNotification();
+            default -> throw new ActionException("OAUTH_SERVICE_NOT_FOUND",
+                "No OAuth config found for service: " + serviceName);
+        };
+
+        if (config == null) {
+            throw new ActionException("OAUTH_SERVICE_NOT_CONFIGURED",
+                "OAuth service '" + serviceName + "' is not configured in application.yml");
+        }
+
+        // Validate required fields
+        if (!StringUtils.hasText(config.getTokenUrl())
+                || !StringUtils.hasText(config.getClientId())
+                || !StringUtils.hasText(config.getClientSecret())) {
+            throw new ActionException("OAUTH_CONFIG_INVALID",
+                "OAuth service '" + serviceName + "' missing token-url, client-id or client-secret");
+        }
+
+        // Validate password grant has username and password
+        if ("password".equals(config.getGrantType())
+                && (!StringUtils.hasText(config.getUsername())
+                    || !StringUtils.hasText(config.getPassword()))) {
+            throw new ActionException("OAUTH_CONFIG_INVALID",
+                "OAuth service '" + serviceName + "' with password grant requires username and password");
+        }
+
+        return config;
+    }
+
+    // ─── Token Fetch ──────────────────────────────────────────────────────────
+
+    private Mono<TokenResult> fetchNewToken(
+            ActionProperties.OAuthServiceConfig config,
+            int timeoutSec,
+            CacheKey cacheKey
+    ) {
+        log.info("Fetching new OAuth token from: {}", config.getTokenUrl());
+
+        MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
+        formData.add("grant_type",    StringUtils.hasText(config.getGrantType())
+            ? config.getGrantType() : "client_credentials");
+        formData.add("client_id",     config.getClientId());
+        formData.add("client_secret", config.getClientSecret());
+
+        // Password grant — centrl uses this
+        if ("password".equals(config.getGrantType())) {
+            formData.add("username", config.getUsername());
+            formData.add("password", config.getPassword());
+            log.debug("Using password grant for token fetch");
+        }
+
+        if (StringUtils.hasText(config.getScope())) {
+            formData.add("scope", config.getScope());
+        }
+
+        if (StringUtils.hasText(config.getAudience())) {
+            formData.add("audience", config.getAudience());
+        }
+
+        long startTime = System.currentTimeMillis();
+
+        return webClientBuilder.build()
+            .post()
+            .uri(config.getTokenUrl())
+            .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+            .body(BodyInserters.fromFormData(formData))
+            .retrieve()
+            .onStatus(
+                status -> status.is4xxClientError() || status.is5xxServerError(),
+                res -> res.bodyToMono(String.class).map(body -> {
+                    log.error("OAuth token endpoint error — status: {}, body: {}",
+                        res.statusCode(), body);
+                    return new ActionException("OAUTH_ENDPOINT_ERROR",
+                        "Token endpoint error (" + res.statusCode() + "): " + body);
+                })
+            )
+            .bodyToMono(JsonNode.class)
+            .timeout(Duration.ofSeconds(timeoutSec))
+            .map(response -> {
+                long durationMs = System.currentTimeMillis() - startTime;
+                log.debug("OAuth token fetched in {}ms", durationMs);
+
+                String accessToken = response.path("access_token").asText(null);
+                int expiresIn      = response.path("expires_in").asInt(3600);
+
+                if (!StringUtils.hasText(accessToken)) {
+                    throw new ActionException("OAUTH_TOKEN_MISSING",
+                        "OAuth response missing access_token field");
+                }
+
+                if (properties.getOauth().isCacheEnabled()) {
+                    tokenCache.put(cacheKey, new CachedToken(accessToken, expiresIn));
+                    log.debug("OAuth token cached — expires in {}s", expiresIn);
+                }
+
+                return new TokenResult(accessToken, TokenCallInfo.builder()
+                    .used(true)
+                    .cached(false)
+                    .status(200)
+                    .expiresIn(expiresIn)
+                    .build());
+            })
+            .onErrorMap(ex -> {
+                if (ex instanceof ActionException) return ex;
+                log.error("OAuth token fetch failed: {}", ex.getMessage());
+                return new ActionException("OAUTH_FETCH_FAILED",
+                    "Failed to fetch OAuth token: " + ex.getMessage());
+            });
+    }
+
+    // ─── Helpers ──────────────────────────────────────────────────────────────
+
+    private String maskValue(String value) {
+        if (value == null || value.length() < 8) return "***";
+        return value.substring(0, 4) + "***";
+    }
+
+    // ─── Cache Key ────────────────────────────────────────────────────────────
+
+    @Data
+    private static class CacheKey {
+        private final String tokenUrl;
+        private final String clientId;
+        private final String scope;
+        private final String audience;
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            CacheKey cacheKey = (CacheKey) o;
+            return Objects.equals(tokenUrl, cacheKey.tokenUrl) &&
+                   Objects.equals(clientId, cacheKey.clientId) &&
+                   Objects.equals(scope, cacheKey.scope) &&
+                   Objects.equals(audience, cacheKey.audience);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(tokenUrl, clientId, scope, audience);
+        }
+    }
+
+    // ─── Cached Token ─────────────────────────────────────────────────────────
+
+    @Data
+    private static class CachedToken {
+        private final String accessToken;
+        private final Instant expiresAt;
+        private final int originalExpiresIn;
+
+        public CachedToken(String accessToken, int expiresIn) {
+            this.accessToken = accessToken;
+            this.originalExpiresIn = expiresIn;
+            this.expiresAt = Instant.now().plusSeconds(expiresIn);
+        }
+
+        public boolean isExpired(int skewSeconds) {
+            return Instant.now().plusSeconds(skewSeconds).isAfter(expiresAt);
+        }
+
+        public int getRemainingSeconds() {
+            long remaining = Duration.between(Instant.now(), expiresAt).getSeconds();
+            return (int) Math.max(0, remaining);
+        }
+    }
+}
