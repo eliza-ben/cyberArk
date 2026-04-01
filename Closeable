@@ -1,0 +1,60 @@
+@Bean
+public CloseableHttpClient apacheHttpClient() {
+    // Fallback: check both https. and http. variants
+    String proxyHost = StringUtils.hasText(System.getProperty("https.proxyHost"))
+            ? System.getProperty("https.proxyHost")
+            : System.getProperty("http.proxyHost");
+
+    String proxyPort = StringUtils.hasText(System.getProperty("https.proxyPort"))
+            ? System.getProperty("https.proxyPort")
+            : System.getProperty("http.proxyPort");
+
+    String proxyUser = StringUtils.hasText(System.getProperty("https.proxyUser"))
+            ? System.getProperty("https.proxyUser")
+            : System.getProperty("http.proxyUser");
+
+    String proxyPassword = StringUtils.hasText(System.getProperty("https.proxyPassword"))
+            ? System.getProperty("https.proxyPassword")
+            : System.getProperty("http.proxyPassword");
+
+    // Strip leading '=' if double-equals typo exists e.g. "=some-proxy"
+    if (StringUtils.hasText(proxyHost) && proxyHost.startsWith("=")) {
+        proxyHost = proxyHost.substring(1);
+    }
+
+    HttpClientBuilder builder = HttpClients.custom()
+            .setConnectionManager(new BasicHttpClientConnectionManager());
+
+    if (StringUtils.hasText(proxyHost) && StringUtils.hasText(proxyPort)) {
+        HttpHost proxy = new HttpHost(proxyHost, Integer.parseInt(proxyPort));
+
+        RequestConfig requestConfig = RequestConfig.custom()
+                .setProxy(proxy)
+                .setConnectionRequestTimeout(20, TimeUnit.SECONDS)
+                .setResponseTimeout(60, TimeUnit.SECONDS)
+                .build();
+
+        builder.setDefaultRequestConfig(requestConfig);
+
+        if (StringUtils.hasText(proxyUser) && StringUtils.hasText(proxyPassword)) {
+            BasicCredentialsProvider credentialsProvider = new BasicCredentialsProvider();
+            credentialsProvider.setCredentials(
+                    new AuthScope(proxyHost, Integer.parseInt(proxyPort)),
+                    new UsernamePasswordCredentials(proxyUser, proxyPassword.toCharArray())
+            );
+            builder.setDefaultCredentialsProvider(credentialsProvider);
+            log.info("Apache HttpClient proxy auth configured for user: {}", proxyUser);
+        }
+
+        log.info("Apache HttpClient using proxy: {}:{}", proxyHost, proxyPort);
+    } else {
+        log.info("Apache HttpClient running without proxy");
+    }
+
+    return builder.build();
+}
+```
+
+Also **fix the `JAVA_TOOL_OPTIONS`** in OpenShift — the double equals and mixed prefixes should be corrected:
+```
+-Dhttps.proxyHost=some-proxy -Dhttps.proxyPort=443 -Dhttps.proxyUser=username -Dhttps.proxyPassword=password
