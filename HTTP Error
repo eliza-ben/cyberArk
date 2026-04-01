@@ -13,6 +13,8 @@ HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(20))
             .build();
 
+          - name: JAVA_TOOL_OPTIONS
+            value: '-Dhttps.proxyHost=egress-proxy.openshift-egress.svc.cluster.local -Dhttps.proxyPort=443 -Dhttp.proxyUser=dv_gen_ni_ocp_ed-svc -Dhttp.proxyPassword=ZPLPmox%3D4W_kh3%25'
 
 Componentpublic class CustomRestClientCustomizer implements RestClientCustomizer {
 
