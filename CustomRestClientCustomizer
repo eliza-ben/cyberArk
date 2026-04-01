@@ -1,0 +1,38 @@
+package org.fcb.genesis.genesisflow.action.config;
+
+import org.springframework.boot.web.client.RestClientCustomizer;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.stereotype.Component;
+
+import java.net.http.HttpClient;
+import java.time.Duration;
+
+/**
+ * Applies proxy-safe HttpClient configuration to every RestClient.Builder
+ * auto-configured by Spring — including the one injected into
+ * HttpClientActionExecutorService.
+ *
+ * Restricted headers (Connection, Proxy-Connection) require:
+ *   -Djdk.httpclient.allowRestrictedHeaders=connection,proxy-connection
+ * Set via JAVA_TOOL_OPTIONS in OpenShift, or .mvn/jvm.config locally.
+ */
+@Component
+public class CustomRestClientCustomizer implements RestClientCustomizer {
+
+    @Override
+    public void customize(org.springframework.web.client.RestClient.Builder restClientBuilder) {
+        HttpClient httpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .connectTimeout(Duration.ofSeconds(20))
+                .build();
+
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(Duration.ofSeconds(30));
+
+        restClientBuilder
+                .requestFactory(requestFactory)
+                .defaultHeader("Connection", "close")
+                .defaultHeader("Proxy-Connection", "close");
+    }
+}
