@@ -1,0 +1,19 @@
+@Configuration
+@Profile("local")
+public class DisableSSLConfig {
+
+    @Bean
+    public void disableSSLVerification() throws Exception {
+        TrustManager[] trustAll = new TrustManager[]{
+            new X509TrustManager() {
+                public X509Certificate[] getAcceptedIssuers() { return null; }
+                public void checkClientTrusted(X509Certificate[] c, String a) {}
+                public void checkServerTrusted(X509Certificate[] c, String a) {}
+            }
+        };
+        SSLContext sc = SSLContext.getInstance("SSL");
+        sc.init(null, trustAll, new SecureRandom());
+        HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
+        HttpsURLConnection.setDefaultHostnameVerifier((h, s) -> true);
+    }
+}
