@@ -1,0 +1,268 @@
+# Kratos Code Service - Simplified Configuration
+
+server:
+  port: ${CODE_SERVICE_PORT:8080}
+  address: ${CODE_SERVICE_BIND_ADDRESS:0.0.0.0}
+  servlet:
+    context-path: /
+  compression:
+    enabled: true
+  error:
+    include-message: always
+    include-binding-errors: always
+  # SSL Configuration for GitLab Integration
+  ssl:
+    enabled: ${SSL_ENABLED:false}
+    trust-store: ${SSL_TRUST_STORE:}
+    trust-store-password: ${SSL_TRUST_STORE_PASSWORD:}
+    trust-store-type: ${SSL_TRUST_STORE_TYPE:PKCS12}
+    trust-all-certs: ${SSL_TRUST_ALL_CERTS:false}
+secret:
+  api:
+    url:
+      base: https://genesis-secret-svc.apps.dv-p.ocp.fcbint.net
+      secret-api: /api/secrets
+
+service:
+  accounts:
+    db: dev_genesis_svc
+    kafka: dv_genesis_kafka-svc
+
+springdoc:
+  enable-hateoas: false
+  swagger-ui:
+    enabled: true
+audit:
+  kafka:
+    enabled: true
+kafka:
+  sasl:
+    jaas:
+      config:
+        username: dv_genesis_kafka-svc #${service.accounts.kafka}
+        vaultId: dev.svbank.com
+        password: hgq}E=489cdxR)K #${KAFKA_PASSWORD}
+#        username: ${service.accounts.kafka}
+#        vaultId: dev.svbank.com
+#        password: ${KAFKA_PASSWORD}
+
+auditalert:
+  starter:
+    transport:
+      type: KAFKA
+    kafka:
+      topic:
+        name: genesis.generic.notify-audit.in
+    rest:
+      baseUrl: https://genesis-audit-svc.apps.dv-p.ocp.fcbint.net/api/v1/auditservice
+# System Topics
+genesis:
+  kafka:
+    topics:
+      audit-events: audit.events.v1
+
+spring:
+  kafka:
+    bootstrap-servers: pde-vd-sdp01.dev.svbank.com:9094,pde-vd-sdp02.dev.svbank.com:9094,pde-vd-sdp03.dev.svbank.com:9094,pde-vd-sdp04.dev.svbank.com:9094
+    properties:
+      security:
+        protocol: SASL_SSL
+      sasl:
+        mechanism: SCRAM-SHA-512
+  main:
+    allow-bean-definition-overriding: true
+  application:
+    name: kratos-code-service
+  profiles:
+    active: development
+
+  # Database Configuration
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://d12508vdrc-1855:7432/genesis?currentSchema=kratos}
+    username: dev_genesis_admin #${service.accounts.db}
+    password: PmgVtrH9whkuf!BS8FD*xavW #${DATABASE_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+
+  # JPA Configuration
+  jpa:
+    hibernate:
+      ddl-auto: validate
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+    open-in-view: false
+
+
+# Management and Monitoring
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+      base-path: /actuator
+  endpoint:
+    env:
+      enabled: true
+    health:
+      show-details: when_authorized
+  health:
+    db:
+      enabled: true
+
+# Logging Configuration
+logging:
+  level:
+    com.novaflow.kratos: INFO
+    org.springframework.security: WARN
+    org.hibernate.SQL: WARN
+    root: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
+#Kratos Specific Configuration
+kratos:
+  # Security Configuration
+  security:
+    auth-mode: BASIC
+    basic:
+      enabled: true
+      users:
+        admin: admin:admin123:CREATE,READ,UPDATE,DELETE,VALIDATE,EXECUTE,MONITOR,CONTROL
+        developer: developer:dev123:CREATE,READ,VALIDATE,EXECUTE
+        operator: operator:ops123:READ,EXECUTE,MONITOR
+        readonly: readonly:readonly123:READ
+      realm: NovaFlow Kratos
+    cors:
+      allowed-origins: ${CORS_ALLOWED_ORIGINS:https://genesis-ui.apps.*-p.ocp.fcbint.net,http://localhost:3000,http://localhost:8080,http://localhost:2181,https://genesis-cfg-svc-qa.apps.ocp.uat.svbank.com/api, https://genesis-cfg-svc-dev.apps.ocp.uat.svbank.com/api,http://10.5.16.153:9093/api,https://genesis-ui-qa.apps.ocp.uat.svbank.com,https://genesis-ui-dev.apps.ocp.uat.svbank.com,http://${KRATOS_PUBLIC_HOST:${HOSTNAME:localhost}}:3000,http://${KRATOS_PUBLIC_HOST:${HOSTNAME:localhost}}:${CODE_SERVICE_PORT:8080},http://${KRATOS_PUBLIC_HOST:${HOSTNAME:localhost}}:${EXECUTOR_SERVICE_PORT:2181}}
+      allowed-methods: GET,POST,PUT,DELETE,OPTIONS
+      allowed-headers: "*"
+      allow-credentials: true
+
+  # Code Validation Configuration
+  validation:
+    python:
+      executable: python
+      timeout-seconds: 30
+      max-code-size-bytes: 1048576
+      temp-dir: /var/genesislogs/kratos/kratos-validation
+    security:
+      max-risk-score: 50
+      forbidden-imports: os,sys,subprocess,socket,urllib,requests,pickle,marshal,eval,exec,__import__,compile,globals,locals,vars
+      scan-timeout-seconds: 60
+    framework:
+      enabled: true
+      strict-mode: true
+      allow-custom-functions: true
+
+  # Code Scaffolding Configuration
+  scaffolding:
+    enabled: true
+    templates-path: templates/
+    cache-enabled: false
+    cache-ttl-minutes: 60
+
+  # Multi-Provider Integration Configuration
+  integration:
+    # Primary provider selection: gitlab, azure-devops, network-folder
+    provider: network-folder
+    fallback-enabled: true
+
+    # GitLab Configuration
+    gitlab:
+      enabled: false
+      api-url: "https://code.gitlab.prod.us-west-2.tlz.svbank.com/api/v4"
+      access-token: "gitlabLLyYfrtzVwtkrEQppuJ5"
+      project-id: "16087"
+      base-branch: main
+
+    # Azure DevOps Configuration
+    azure-devops:
+      enabled: false
+      organization: ""  # e.g., "mycompany"
+      project: ""       # e.g., "MyProject"
+      repository: ""    # e.g., "MyRepo"
+      personal-access-token: ""
+      base-branch: main
+
+    # Network Shared Folder Configuration
+    network-folder:
+      enabled: true
+      base-path: /mnt/genesis_share/GENESIS_DEV/kratos/codes     # e.g., "\\\\server\\share\\kratos-code" or "/mnt/shared/kratos-code"
+      create-backup: true
+      username: ""      # Optional for network authentication
+      password: ""      # Optional for network authentication
+
+    # Legacy Git Configuration (for backward compatibility)
+    git:
+      enabled: true
+      platform: gitlab
+
+      # Branch Settings
+      base-branch: main
+      branch-prefix: kratos-
+
+      # Webhook Configuration
+      webhook:
+        secret: ""  # Set your webhook secret here
+        verify-ssl: true
+
+      # API Settings
+      timeout:
+        connection-ms: 10000
+        read-ms: 30000
+      retry:
+        max-attempts: 3
+        delay-ms: 1000
+
+      # Merge Request/Pull Request Settings
+      merge-request:
+        auto-create: true
+        auto-assign: true
+        require-approval: true
+        min-approvals: 1
+        squash-commits: true
+        remove-source-branch: true
+        delete-branch-after-merge: true
+        labels:
+          - code-review
+          - kratos-artifact
+        title-template: "Code Review: {artifactName}"
+        description-template: |
+          ## Code Artifact Review
+
+          **Artifact:** {artifactName}
+          **Type:** {transformationType}
+          **Created by:** {createdBy}
+          **Domain:** {domainId}
+
+          ### Description
+          {description}
+
+          ### Validation Status
+          - ✅ Code validation: {validationStatus}
+          - ✅ Security scan: Passed
+          - ✅ Framework compliance: Verified
+
+          Please review the code changes and approve if they meet the requirements.
+
+      # Authentication Configuration
+      auth:
+        type: token  # token, basic, oauth, ssh
+        username: ""
+        password: ""
+        token: ""  # Set your Personal Access Token here
+        oauth:
+          client-id: ""
+          client-secret: ""
+        ssh:
+          key-path: ""
+          passphrase: ""
+
